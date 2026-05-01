@@ -1,0 +1,66 @@
+---
+description: Redlock distributed-lock adapter rules. Loaded for files in src/infrastructure/locking.
+globs:
+  - "src/infrastructure/locking/**"
+alwaysApply: false
+---
+
+# RedlockClient — adapter rules
+
+Read [`../../docs/scenario/content.md`](../../../docs/scenario/content.md) §4 first. This is the most safety-critical adapter in the service.
+
+## Topology
+
+- **5 independent Redis masters**, no replication between them. Compose provides them as `redlock-1`…`redlock-5`. Configured via env `REDLOCK_NODES`.
+- **Never** lock against the cache Redis (`redis-cache`). That instance may have replicas / persistence; the lock nodes must not.
+
+## Acquire
+
+- Parallel `SET key token NX PX=ttl` to all 5 masters.
+- Granted iff **≥ 3 succeeded** AND **elapsed wall-clock time < TTL**.
+- Effective validity = `TTL − elapsed − drift_margin`.
+- Per-node timeout ~50 ms so one slow node can't stall acquisition.
+
+## Release
+
+- Token-checked Lua `DEL` on all 5 nodes — only deletes if the stored value matches the caller's unique token.
+- Plain `DEL` is wrong. It can release another client's lock when TTLs overlap.
+- Copy the canonical Lua release script from the Redlock spec into `release.lua`. **Do not rewrite it.**
+
+## Lock keys (one lock per contended resource — never global)
+
+```
+lock:bay:{bayId}:{slotStart}
+lock:tech:{technicianId}:{slotStart}
+```
+
+A global "booking lock" serializes unrelated bookings and kills throughput.
+
+## TTL
+
+- Default `5000ms`. Pick ≫ expected critical-section duration but ≪ user-perceived booking latency.
+- The critical section is steps 3–5 of the booking flow (PG re-check, INSERT, cache invalidate).
+
+## Library
+
+Use the `redlock` npm library. Do not hand-roll the acquire/release loop — getting the timing math wrong silently breaks safety.
+
+## Required failure-mode tests
+
+`redlock.client.spec.ts` must cover (against real Redis from compose):
+
+| Case | Expected |
+|---|---|
+| Quorum success (all 5 OK) | acquired |
+| Single-node failure (4/5) | acquired |
+| Majority failure (≤ 2/5) | not acquired |
+| Token-mismatch release | no-op (don't delete someone else's lock) |
+| TTL expiry | lock auto-releases without explicit release call |
+
+## Don'ts
+
+- Don't lock against the cache Redis.
+- Don't release with plain `DEL`. Token-checked Lua only.
+- Don't use a single global lock.
+- Don't add a "release on crash" daemon. TTL is the cleanup mechanism.
+- Don't hand-roll the acquire timing loop.

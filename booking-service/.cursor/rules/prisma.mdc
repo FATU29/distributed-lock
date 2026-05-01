@@ -1,0 +1,64 @@
+---
+description: Prisma schema, migration, and persistence-adapter rules.
+globs:
+  - "prisma/**"
+  - "src/infrastructure/prisma/**"
+  - "src/infrastructure/persistence/**"
+alwaysApply: false
+---
+
+# Prisma — schema, migrations, persistence adapters
+
+## Schema
+
+- `prisma/schema.prisma` is the **single source of truth** for the database. No hand-rolled SQL migrations on the side.
+- Indexes for hot-path queries: `(bay_id, slot_start, slot_end)` and `(technician_id, slot_start, slot_end)` for the in-lock re-check.
+- Use a `tstzrange` exclusion constraint on `(bay_id, slot_window)` and `(technician_id, slot_window)` if expressible — defense-in-depth against the lock failing open. If Prisma can't express it, hand-edit the generated migration SQL and document why in the migration file.
+
+## Migration commands
+
+| When | Command |
+|---|---|
+| New migration during dev | `npx prisma migrate dev --name <short_change_name>` (run **inside the container**) |
+| Apply migrations in CI / prod | `npx prisma migrate deploy` |
+| Regenerate the client | `npx prisma generate` (also runs via `postinstall`) |
+
+Never `migrate dev` in non-dev environments — it can rewrite history.
+
+## PrismaClient wrapping
+
+- One `PrismaService extends PrismaClient` lives in `src/infrastructure/prisma/prisma.service.ts` with `OnModuleInit` / `OnModuleDestroy`. **The only place `PrismaClient` is instantiated.**
+- Repositories depend on `PrismaService`, never on `PrismaClient` directly.
+
+## Persistence adapters
+
+- Every repository in `src/infrastructure/persistence/` implements a port from `src/domain/ports/`.
+- Repositories return **domain entities**, not Prisma models. Map Prisma model ↔ domain entity in `persistence/mappers/`. The mapper layer is non-negotiable.
+- Transactions: expose `UnitOfWork.run(fn)` (port) that wraps `prisma.$transaction(fn)`. The application layer never sees Prisma.
+
+## Key tables
+
+- `User` — owned by this service (stable `id`, unique `email`, display fields as needed). Persisted via `PrismaUserRepository`. Don't fold User identity into `Customer` — the two are separate tables.
+- `Customer`, `Vehicle` — booking FKs; `Customer.user_id` → `User.id` (unique). Keep aligned with the dev fixtures in `prisma/seed.ts`.
+- `Appointment` (id, customer_id, vehicle_vin, dealership_id, bay_id, technician_id, service_type, slot_start, slot_end, status, created_at, updated_at).
+- `Outbox` (id, aggregate_type, aggregate_id, event_type, payload jsonb, created_at, published_at nullable).
+- `ServiceBay`, `Technician`, `Dealership`, `ServiceType`, `TechnicianQualifiedService` (junction).
+- `TechnicalConfig` — `scope` + `scope_id` + `config_key` + JSON `value`; global sentinel `00000000-0000-0000-0000-000000000000` for `scope_id` when `scope = GLOBAL`. Example key `specialization.ok` for per-technician dynamic maps.
+
+## Outbox rule
+
+- `Appointment` INSERT and `Outbox` INSERT happen in the **same** `prisma.$transaction`. There is no other correct way.
+- This service never publishes to Kafka directly. A separate CDC relay tails WAL.
+
+## Tests
+
+- Repository tests run against **real Postgres** from `docker-compose.dev.yml`. No Prisma mocks.
+- Each test rolls back its transaction or runs against a per-test database created from the migrated schema. Don't rely on test ordering.
+
+## Don'ts
+
+- Don't import `@prisma/client` types outside `src/infrastructure/`. Map at the repository boundary.
+- Don't reuse a Prisma model as a domain entity.
+- Don't reach for `prisma migrate dev` in production. `migrate deploy` only.
+- Don't bypass migrations to "fix" a startup error — read the migration error.
+- Don't add a second migration system on the side.

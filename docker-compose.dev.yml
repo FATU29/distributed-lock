@@ -1,0 +1,184 @@
+# Local development stack.
+#
+# - booking-service runs in dev mode (`nest start --watch`). Source is bind-mounted
+#   from the host so edits trigger an in-container recompile. node_modules lives
+#   in a named volume so the host's tree (which may be from a different platform
+#   or out of sync) does not shadow the container install.
+# - Postgres is the system of record. Prisma owns the schema + migrations.
+# - Five independent Redis masters back the Redlock quorum (3-of-5). They are
+#   intentionally separate containers with no replication between them — this
+#   is required by the locking design (see CLAUDE.md, rule 4).
+# - User-service mock is in-process inside booking-service (an infrastructure
+#   adapter), not a separate container.
+# - Observability stack: OTel Collector → Tempo (traces), Prometheus (metrics),
+#   Promtail → Loki (logs), Grafana (visualization). See docs/observability/strategy.md.
+
+services:
+  booking-service:
+    build:
+      context: ./booking-service
+      dockerfile: Dockerfile.dev
+    image: scheduler/booking-service:dev
+    ports:
+      - "8080:8080"
+    environment:
+      NODE_ENV: development
+      PORT: 8080
+      DATABASE_URL: postgres://scheduler:scheduler@postgres:5432/scheduler
+      REDIS_CACHE_URL: redis://redis-cache:6379
+      REDLOCK_NODES: redis://redlock-1:6379,redis://redlock-2:6379,redis://redlock-3:6379,redis://redlock-4:6379,redis://redlock-5:6379
+      USER_SERVICE_DRIVER: mock
+      # Observability — see docs/observability/strategy.md.
+      # Logging: pino at debug in dev, pretty-printed via pino-pretty.
+      LOG_LEVEL: debug
+      # Tracing: OTLP/HTTP exporter → OTel Collector → Tempo.
+      OTEL_EXPORTER_OTLP_TRACES_ENDPOINT: http://otel-collector:4318/v1/traces
+      # Metrics: prom-client exposes /metrics on PORT (8080). Scraped by Prometheus.
+      # Force polling — macOS bind mounts don't propagate native fs events into Linux containers reliably.
+      CHOKIDAR_USEPOLLING: "true"
+      CHOKIDAR_INTERVAL: "500"
+      TSC_WATCHFILE: DynamicPriorityPolling
+      TSC_WATCHDIRECTORY: DynamicPriorityPolling
+    volumes:
+      - ./booking-service:/app
+      - booking_node_modules:/app/node_modules
+    depends_on:
+      - postgres
+      - redis-cache
+      - redlock-1
+      - redlock-2
+      - redlock-3
+      - redlock-4
+      - redlock-5
+      - otel-collector
+    labels:
+      logging: "promtail"
+
+  postgres:
+    image: postgres:16-alpine
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: scheduler
+      POSTGRES_PASSWORD: scheduler
+      POSTGRES_DB: scheduler
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  # Cache-aside hot read path. Distinct from the Redlock cluster on purpose —
+  # the cache may have replicas / persistence; the lock nodes must not.
+  redis-cache:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+
+  # Redlock quorum: 5 independent masters, no replication between them.
+  # Do not collapse these into one Redis instance; the quorum is the safety guarantee.
+  redlock-1:
+    image: redis:7-alpine
+    ports:
+      - "6381:6379"
+  redlock-2:
+    image: redis:7-alpine
+    ports:
+      - "6382:6379"
+  redlock-3:
+    image: redis:7-alpine
+    ports:
+      - "6383:6379"
+  redlock-4:
+    image: redis:7-alpine
+    ports:
+      - "6384:6379"
+  redlock-5:
+    image: redis:7-alpine
+    ports:
+      - "6385:6379"
+
+  # ============ OBSERVABILITY STACK ============
+  # Pipeline: booking-service → OTel Collector → Tempo (traces)
+  #           booking-service → Prometheus scrape (metrics)
+  #           booking-service → Promtail → Loki (logs)
+  #           All three → Grafana (visualization, correlation)
+
+  # OTel Collector — receives OTLP/HTTP traces from booking-service, forwards to Tempo.
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.120.0
+    command: ["--config", "/etc/otel-collector-config.yaml"]
+    volumes:
+      - ./observability/otel-collector-config.yaml:/etc/otel-collector-config.yaml:ro
+    ports:
+      - "4318:4318"   # OTLP/HTTP receiver
+    depends_on:
+      - tempo
+
+  # Grafana Tempo — distributed tracing backend. Receives OTLP from collector.
+  tempo:
+    image: grafana/tempo:2.7.2
+    command: ["-config.file=/etc/tempo.yaml"]
+    volumes:
+      - ./observability/tempo.yaml:/etc/tempo.yaml:ro
+      - tempo_data:/var/tempo
+    ports:
+      - "3200:3200"   # Tempo HTTP API
+
+  # Prometheus — scrapes /metrics from booking-service.
+  prometheus:
+    image: prom/prometheus:v3.4.0
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+      - "--web.enable-remote-write-receiver"
+    volumes:
+      - ./observability/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    ports:
+      - "9090:9090"
+
+  # Grafana Loki — log aggregation backend (like Prometheus, but for logs).
+  loki:
+    image: grafana/loki:3.5.0
+    command: ["-config.file=/etc/loki/loki.yaml"]
+    volumes:
+      - ./observability/loki.yaml:/etc/loki/loki.yaml:ro
+      - loki_data:/loki
+    ports:
+      - "3100:3100"
+
+  # Promtail — ships container logs from Docker to Loki.
+  promtail:
+    image: grafana/promtail:3.5.0
+    command: ["-config.file=/etc/promtail/promtail.yaml"]
+    volumes:
+      - ./observability/promtail.yaml:/etc/promtail/promtail.yaml:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    depends_on:
+      - loki
+
+  # Grafana — unified dashboard for metrics (Prometheus), traces (Tempo), logs (Loki).
+  # Login: admin / admin. Datasources are auto-provisioned.
+  grafana:
+    image: grafana/grafana:11.6.0
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: admin
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Admin
+      GF_FEATURE_TOGGLES_ENABLE: traceqlEditor tempoServiceGraph
+    volumes:
+      - ./observability/grafana/provisioning:/etc/grafana/provisioning:ro
+      - grafana_data:/var/lib/grafana
+    ports:
+      - "3000:3000"
+    depends_on:
+      - prometheus
+      - tempo
+      - loki
+
+volumes:
+  booking_node_modules:
+  postgres_data:
+  tempo_data:
+  prometheus_data:
+  loki_data:
+  grafana_data:

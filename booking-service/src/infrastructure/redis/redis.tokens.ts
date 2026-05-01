@@ -1,0 +1,9 @@
+export const REDIS_INFRASTRUCTURE_CONFIG = Symbol(
+  'REDIS_INFRASTRUCTURE_CONFIG',
+);
+
+export const CACHE_REDIS = Symbol('CACHE_REDIS');
+
+export const REDLOCK_REDIS_CLIENTS = Symbol('REDLOCK_REDIS_CLIENTS');
+
+export const REDLOCK_LIB = Symbol('REDLOCK_LIB');

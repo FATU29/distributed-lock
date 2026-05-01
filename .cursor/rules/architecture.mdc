@@ -1,0 +1,60 @@
+---
+description: Repo-wide clean-architecture rules. Always loaded.
+alwaysApply: true
+---
+
+# Clean architecture — non-negotiable
+
+Canonical guides: [`/CLAUDE.md`](../../CLAUDE.md) (repo summary + AI doc map), [`/booking-service/CLAUDE.md`](../../booking-service/CLAUDE.md) (service depth), [`/docs/ai/README.md`](../../docs/ai/README.md) (CRUD unit-test checklist for AI). On drift, those win.
+
+## Dependency direction
+
+```
+interface  →  application  →  domain  ←  infrastructure
+```
+
+- **Domain** depends on nothing. No `@nestjs/*`, no `@prisma/client`, no `ioredis`, no DTOs, no HTTP types. Pure TypeScript only.
+- **Application** depends only on domain. Defines and consumes ports (interfaces). Never imports a concrete adapter.
+- **Infrastructure** implements ports. Houses `@prisma/client`, `ioredis`, `redlock`, `kafkajs`, HTTP clients, and in-process mocks of upstream services.
+- **Interface** depends on application. Controllers map HTTP shapes to use-case inputs/outputs.
+
+If an inner layer needs an outer layer, you have the dependency wrong. Invert it: define a port in the inner layer and let the outer layer implement it.
+
+## Storage rules
+
+- **PostgreSQL is the source of truth.** Redis is cache + lock store, never source of truth.
+- **Cache-aside, not write-through.** Reads: GET Redis → on miss SELECT PG → SET back with TTL. Writes: PG first, then invalidate the affected cache key.
+- Prisma owns the schema and migrations (`prisma/schema.prisma`). No second migration system.
+- `@prisma/client` types never leak past `infrastructure/`. Map to domain entities in `persistence/mappers/`.
+
+## NestJS conventions
+
+- Constructor injection with `private readonly`. No property injection.
+- Inject ports via DI tokens (`@Inject(BOOKING_REPOSITORY)`). Never inject concrete classes into application code.
+- Singleton scope unless there's a concrete reason. Request-scoped providers disable the DI cache.
+- Global `ValidationPipe` with `whitelist: true, forbidNonWhitelisted: true, transform: true`.
+- Call `app.enableShutdownHooks()` so adapters can implement `OnModuleDestroy`.
+
+## Errors
+
+- Domain throws plain typed errors (`SlotAlreadyBookedError`, `LockNotAcquiredError`). **Never** throw `HttpException` from domain or application.
+- Interface layer's exception filter is the single mapping point from domain errors → HTTP.
+
+## Code style
+
+- File names kebab-case. One primary export per file. No barrel `index.ts` re-exports.
+- Async/await everywhere. ESLint `no-floating-promises` is on — `await` or explicit `void`.
+- Default to no comments. Add one only when the *why* is non-obvious. Don't narrate what the code does.
+
+## Unit tests — CRUD aggregates
+
+When adding or changing an aggregate CRUD slice under `booking-service/`, ship **`test/fakes/fake-<aggregate>.repository.ts`** and **`src/application/<aggregate>/<aggregate>.service.spec.ts`** (hand-written fake, no Prisma mocks). Checklist: [`/docs/ai/README.md`](../../docs/ai/README.md).
+
+## Don'ts (across the repo)
+
+- Don't put business logic in controllers, repositories, or NestJS modules.
+- Don't reuse a domain entity as an HTTP DTO. Don't reuse a Prisma model as a domain entity.
+- Don't add abstractions ahead of need. Three similar lines beats a premature abstraction.
+- Don't add new infra (queue, cache layer, datastore) without it appearing in the architecture doc.
+- Don't disable lint rules to make code pass. Fix the underlying issue.
+- Don't grow business logic in mock adapters. If a mock needs branches, the test belongs elsewhere.

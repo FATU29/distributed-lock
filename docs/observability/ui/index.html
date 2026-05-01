@@ -1,0 +1,461 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Observability Strategy — Booking Service</title>
+  <meta name="description" content="Interactive observability strategy dashboard for the Booking Service: Metrics, Traces, and Logs">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <!-- Hero -->
+  <header class="hero">
+    <div class="hero-bg"></div>
+    <div class="container">
+      <span class="badge">Interview Prep · Observability</span>
+      <h1>Metrics · Traces · Logs</h1>
+      <p class="subtitle">Three-pillar observability strategy for the <strong>Booking Service</strong> — built on Pino, Prometheus, OpenTelemetry, visualized in Grafana.</p>
+    </div>
+  </header>
+
+  <!-- Nav Tabs -->
+  <nav class="tabs" id="tabs">
+    <div class="container tabs-inner">
+      <button class="tab active" data-target="overview">Overview</button>
+      <button class="tab" data-target="logging">Logging</button>
+      <button class="tab" data-target="metrics">Metrics</button>
+      <button class="tab" data-target="tracing">Tracing</button>
+      <button class="tab" data-target="correlation">Correlation</button>
+      <button class="tab" data-target="grafana">Grafana Stack</button>
+    </div>
+  </nav>
+
+  <!-- Sections -->
+  <main class="container">
+
+    <!-- OVERVIEW -->
+    <section class="panel active" id="overview">
+      <div class="card-grid">
+        <div class="card card-logging" onclick="switchTab('logging')">
+          <div class="card-icon">📝</div>
+          <h3>Logging</h3>
+          <p class="card-tech">pino + nestjs-pino</p>
+          <p>Structured JSON logs, async transport, request-scoped correlation via AsyncLocalStorage.</p>
+          <span class="card-tag">< 1ms overhead</span>
+        </div>
+        <div class="card card-metrics" onclick="switchTab('metrics')">
+          <div class="card-icon">📊</div>
+          <h3>Metrics</h3>
+          <p class="card-tech">prom-client + Prometheus</p>
+          <p>Pull-based histograms & counters shaped around SLO targets. N-instance friendly.</p>
+          <span class="card-tag">6 custom metrics</span>
+        </div>
+        <div class="card card-tracing" onclick="switchTab('tracing')">
+          <div class="card-icon">🔍</div>
+          <h3>Tracing</h3>
+          <p class="card-tech">OpenTelemetry + OTLP/HTTP</p>
+          <p>Auto-instrumented distributed traces across Express, ioredis, pg. Vendor-neutral.</p>
+          <span class="card-tag">Zero manual spans</span>
+        </div>
+      </div>
+
+      <div class="section-block">
+        <h2>Why These Choices?</h2>
+        <p>Six constraints drove every decision:</p>
+        <div class="constraint-grid">
+          <div class="constraint"><span class="c-num">1</span><div><strong>p99 SLOs</strong><br>Cache hit &lt;5ms, miss &lt;25ms, lock &lt;50ms, booking &lt;200ms</div></div>
+          <div class="constraint"><span class="c-num">2</span><div><strong>N Stateless Instances</strong><br>No sticky sessions, no per-instance config drift</div></div>
+          <div class="constraint"><span class="c-num">3</span><div><strong>6-Step Booking Flow</strong><br>Crosses PG, cache Redis, 5 Redlock nodes</div></div>
+          <div class="constraint"><span class="c-num">4</span><div><strong>Clean Architecture</strong><br>No framework/IO imports in domain or application layers</div></div>
+          <div class="constraint"><span class="c-num">5</span><div><strong>NestJS 11</strong><br>Must integrate with DI, lifecycle, logger interface</div></div>
+          <div class="constraint"><span class="c-num">6</span><div><strong>OSS-First</strong><br>Vendor-neutral wire formats, swappable exporters</div></div>
+        </div>
+      </div>
+
+      <div class="section-block">
+        <h2>File Layout</h2>
+        <pre class="code-block"><code>booking-service/src/
+  main.ts                              <span class="comment"># imports tracing.ts FIRST</span>
+  app.module.ts                        <span class="comment"># imports ObservabilityModule</span>
+  infrastructure/observability/
+    tracing.ts                         <span class="comment"># OTel SDK bootstrap (no Nest module)</span>
+    logging.module.ts                  <span class="comment"># nestjs-pino + correlation mixin</span>
+    metrics.module.ts                  <span class="comment"># prom-client defs + /metrics</span>
+    observability.module.ts            <span class="comment"># composes the two Nest modules</span></code></pre>
+      </div>
+    </section>
+
+    <!-- LOGGING -->
+    <section class="panel" id="logging">
+      <div class="section-header"><span class="pill pill-log">Pillar 1</span><h2>Logging — Pino via nestjs-pino</h2></div>
+
+      <div class="two-col">
+        <div>
+          <h3>What It Does</h3>
+          <ul>
+            <li><strong>pino v10</strong> integrated through <strong>nestjs-pino v4</strong></li>
+            <li>JSON output in production; <code>pino-pretty</code> in dev (<code>NODE_ENV</code> toggle)</li>
+            <li><code>X-Request-Id</code> honoured or generated; echoed in response header</li>
+            <li>Every log stamped with <code>trace_id</code> and <code>span_id</code> via pino mixin</li>
+            <li><code>authorization</code>, <code>cookie</code>, <code>set-cookie</code> headers redacted</li>
+          </ul>
+          <h3>Key Interview Points</h3>
+          <div class="qa-card">
+            <div class="qa-q">Q: Why pino over Winston?</div>
+            <div class="qa-a">~5× faster. With a 200ms p99 budget, 5-10ms lost to logging is unacceptable. Pino serializes JSON without string templates and offloads transport to a worker thread.</div>
+          </div>
+          <div class="qa-card">
+            <div class="qa-q">Q: Why not console.log?</div>
+            <div class="qa-a">No level filtering, no structured output, no async sink, no redaction, blocks event loop on stderr writes.</div>
+          </div>
+          <div class="qa-card">
+            <div class="qa-q">Q: Why nestjs-pino specifically?</div>
+            <div class="qa-a">Replaces NestJS built-in Logger so framework-internal logs flow through same pipeline. Ties HTTP request logger to AsyncLocalStorage — any service injected gets req.id, trace_id, span_id automatically.</div>
+          </div>
+        </div>
+        <div>
+          <h3>Sample Log Line</h3>
+          <pre class="code-block code-sm"><code>{
+  "level": 30,
+  "time": 1714520400000,
+  "pid": 1,
+  "hostname": "scheduler-7f8b9",
+  <span class="hl">"req_id": "abc-123-def"</span>,
+  <span class="hl">"trace_id": "4bf92f3577b34da6a3ce929d0e0e4736"</span>,
+  <span class="hl">"span_id": "00f067aa0ba902b7"</span>,
+  "msg": "Appointment A-9981 confirmed",
+  "req": {
+    "method": "POST",
+    "url": "/appointments"
+  }
+}</code></pre>
+          <h3>Deliberate Non-Decisions</h3>
+          <div class="not-done">
+            <div>❌ No log aggregator chosen — emit JSON to stdout, let container runtime handle it</div>
+            <div>❌ No <code>console.log</code> allowed — ESLint <code>no-console</code> rule enforces this</div>
+            <div>❌ No in-process pino transports — decouples app failure modes from log pipeline</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="comparison-table">
+        <h3>Logger Comparison</h3>
+        <table>
+          <thead><tr><th>Feature</th><th class="winner">Pino ✓</th><th>Winston</th><th>Bunyan</th><th>console.log</th></tr></thead>
+          <tbody>
+            <tr><td>Speed</td><td class="winner">~5× faster</td><td>Baseline</td><td>Slower</td><td>Blocks event loop</td></tr>
+            <tr><td>JSON default</td><td class="winner">Yes</td><td>printf template</td><td>Yes</td><td>No</td></tr>
+            <tr><td>Async transport</td><td class="winner">Worker thread</td><td>Hot path</td><td>Hot path</td><td>Sync</td></tr>
+            <tr><td>Child loggers</td><td class="winner">Cheap, native</td><td>Late addition</td><td>Yes</td><td>No</td></tr>
+            <tr><td>Redaction</td><td class="winner">Built-in</td><td>Plugin</td><td>No</td><td>No</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- METRICS -->
+    <section class="panel" id="metrics">
+      <div class="section-header"><span class="pill pill-metric">Pillar 2</span><h2>Metrics — Prometheus via prom-client</h2></div>
+
+      <div class="section-block">
+        <h3>Custom Metrics (SLO-Shaped)</h3>
+        <div class="metric-grid">
+          <div class="metric-card">
+            <div class="metric-type hist">Histogram</div>
+            <h4>booking_confirm_duration_seconds</h4>
+            <p>The headline SLO (200ms p99). Buckets: 25/50/100/150/200/300/500/1000/2000ms</p>
+            <div class="metric-labels">Labels: <code>outcome</code></div>
+          </div>
+          <div class="metric-card">
+            <div class="metric-type hist">Histogram</div>
+            <h4>availability_read_duration_seconds</h4>
+            <p>Two SLOs in one — split by <code>source</code> for cache hit (5ms) vs miss (25ms)</p>
+            <div class="metric-labels">Labels: <code>source=cache|db</code></div>
+          </div>
+          <div class="metric-card">
+            <div class="metric-type hist">Histogram</div>
+            <h4>redlock_acquire_duration_seconds</h4>
+            <p>50ms uncontended SLO. Detects contention regressions.</p>
+            <div class="metric-labels">Labels: <code>contended</code></div>
+          </div>
+          <div class="metric-card">
+            <div class="metric-type counter">Counter</div>
+            <h4>redlock_outcome_total</h4>
+            <p><code>quorum_failed</code> = Redis health canary. <code>token_mismatch</code> = clock drift canary.</p>
+            <div class="metric-labels">Labels: <code>outcome</code></div>
+          </div>
+          <div class="metric-card">
+            <div class="metric-type counter">Counter</div>
+            <h4>booking_outcome_total</h4>
+            <p>confirmed vs conflict vs lock_failed vs validation vs error</p>
+            <div class="metric-labels">Labels: <code>outcome</code></div>
+          </div>
+          <div class="metric-card">
+            <div class="metric-type counter">Counter</div>
+            <h4>availability_cache_outcome_total</h4>
+            <p>Cache hit ratio — below ~95% means reads regress toward DB target</p>
+            <div class="metric-labels">Labels: <code>outcome=hit|miss|error</code></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="two-col">
+        <div>
+          <h3>Key Interview Points</h3>
+          <div class="qa-card">
+            <div class="qa-q">Q: Why Prometheus pull model over StatsD push?</div>
+            <div class="qa-a">N stateless instances expose <code>/metrics</code>; Prometheus discovers them. Push-based needs sender to know the destination = operational drag. Also, StatsD timer percentiles are per-instance and can't be aggregated — averaging p99s is a textbook anti-pattern.</div>
+          </div>
+          <div class="qa-card">
+            <div class="qa-q">Q: Why custom histogram buckets?</div>
+            <div class="qa-a">Default log-scale buckets produce noisy quantile estimates near specific SLO targets. SLO-shaped buckets cost a few extra time-series but pay for themselves in dashboard usability.</div>
+          </div>
+          <div class="qa-card">
+            <div class="qa-q">Q: Why no business metrics?</div>
+            <div class="qa-a">Cardinality discipline. "Bookings per dealership per hour" needs dealership labels → cardinality explosion. That belongs downstream of Kafka's <code>appointment.events</code> topic in the analytics consumer.</div>
+          </div>
+        </div>
+        <div>
+          <h3>PromQL Examples</h3>
+          <pre class="code-block code-sm"><code><span class="comment"># p99 booking latency (the headline SLO)</span>
+histogram_quantile(0.99,
+  rate(booking_confirm_duration_seconds_bucket[5m])
+)
+
+<span class="comment"># Cache hit ratio</span>
+sum(rate(availability_cache_outcome_total
+  {outcome="hit"}[5m]))
+/
+sum(rate(availability_cache_outcome_total[5m]))
+
+<span class="comment"># Redlock quorum failure rate</span>
+rate(redlock_outcome_total
+  {outcome="quorum_failed"}[5m])</code></pre>
+        </div>
+      </div>
+    </section>
+
+    <!-- TRACING -->
+    <section class="panel" id="tracing">
+      <div class="section-header"><span class="pill pill-trace">Pillar 3</span><h2>Tracing — OpenTelemetry</h2></div>
+
+      <div class="two-col">
+        <div>
+          <h3>Setup</h3>
+          <ul>
+            <li><code>@opentelemetry/sdk-node</code> + <code>auto-instrumentations-node</code></li>
+            <li>Exporter: <code>exporter-trace-otlp-http</code> over OTLP/HTTP</li>
+            <li>Bootstrapped in <code>tracing.ts</code> — <strong>first import in main.ts</strong></li>
+            <li>Auto-patches: Express, HTTP, ioredis, pg, dns, net, undici</li>
+            <li><code>fs</code> instrumentation explicitly disabled (noise)</li>
+            <li>SIGTERM handler flushes SDK before exit</li>
+          </ul>
+
+          <h3>Why OTel First Import?</h3>
+          <div class="callout callout-warn">Auto-instrumentations patch modules at <code>require()</code> time. The SDK must start before NestJS / Express / pg / ioredis are loaded, otherwise those modules won't be traced.</div>
+
+          <h3>Key Interview Points</h3>
+          <div class="qa-card">
+            <div class="qa-q">Q: Why OTel over Jaeger/Zipkin client?</div>
+            <div class="qa-a">Vendor-neutral wire format (OTLP). Swap Jaeger for Tempo or Datadog without touching app code. Jaeger/Zipkin clients are in maintenance mode.</div>
+          </div>
+          <div class="qa-card">
+            <div class="qa-q">Q: Why OTLP/HTTP not gRPC?</div>
+            <div class="qa-a">Firewall-friendly, same port semantics as any HTTP call. Slightly higher overhead than gRPC but exports happen async off the request thread — doesn't matter.</div>
+          </div>
+        </div>
+        <div>
+          <h3>Booking Flow Trace (Waterfall)</h3>
+          <div class="waterfall">
+            <div class="wf-row"><div class="wf-label">POST /appointments</div><div class="wf-bar wf-full" style="width:100%"><span>200ms</span></div></div>
+            <div class="wf-row"><div class="wf-label">├ Validate request</div><div class="wf-bar wf-app" style="width:5%;margin-left:0"><span>10ms</span></div></div>
+            <div class="wf-row"><div class="wf-label">├ Redis GET avail:*</div><div class="wf-bar wf-redis" style="width:2%;margin-left:5%"><span>3ms</span></div></div>
+            <div class="wf-row"><div class="wf-label">├ Redlock acquire (5 nodes)</div><div class="wf-bar wf-lock" style="width:20%;margin-left:7%"><span>40ms</span></div></div>
+            <div class="wf-row"><div class="wf-label">├ PG SELECT (re-check)</div><div class="wf-bar wf-pg" style="width:10%;margin-left:27%"><span>20ms</span></div></div>
+            <div class="wf-row"><div class="wf-label">├ PG INSERT (appt+outbox)</div><div class="wf-bar wf-pg" style="width:15%;margin-left:37%"><span>30ms</span></div></div>
+            <div class="wf-row"><div class="wf-label">├ Redis DEL avail:*</div><div class="wf-bar wf-redis" style="width:2%;margin-left:52%"><span>3ms</span></div></div>
+            <div class="wf-row"><div class="wf-label">└ Redlock release (Lua)</div><div class="wf-bar wf-lock" style="width:5%;margin-left:54%"><span>10ms</span></div></div>
+          </div>
+          <div class="wf-legend">
+            <span class="wf-legend-item"><span class="dot dot-app"></span>App</span>
+            <span class="wf-legend-item"><span class="dot dot-redis"></span>Redis</span>
+            <span class="wf-legend-item"><span class="dot dot-lock"></span>Redlock</span>
+            <span class="wf-legend-item"><span class="dot dot-pg"></span>PostgreSQL</span>
+          </div>
+
+          <h3>Deliberate Non-Decisions</h3>
+          <div class="not-done">
+            <div>❌ No manual spans in domain/application — auto-instrumentation covers I/O</div>
+            <div>❌ No tail-based sampling configured — that's a collector-side concern</div>
+            <div>❌ No tracing for outbox publishing — relay's responsibility</div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- CORRELATION -->
+    <section class="panel" id="correlation">
+      <div class="section-header"><span class="pill pill-corr">Pillar 4</span><h2>Correlation Across Pillars</h2></div>
+
+      <div class="callout callout-info">The three signals are useful individually. They are <strong>dramatically more useful when joined</strong> — which requires that every signal carries the same identifiers.</div>
+
+      <div class="section-block">
+        <h3>How Correlation Works</h3>
+        <div class="flow-diagram">
+          <div class="flow-node flow-req">
+            <strong>Inbound Request</strong>
+            <div class="flow-detail">X-Request-Id header<br>(honoured or generated)</div>
+          </div>
+          <div class="flow-arrow">→</div>
+          <div class="flow-node flow-otel">
+            <strong>OTel Span Created</strong>
+            <div class="flow-detail">trace_id + span_id generated</div>
+          </div>
+          <div class="flow-arrow">→</div>
+          <div class="flow-node flow-pino">
+            <strong>Pino Mixin Injects</strong>
+            <div class="flow-detail">trace_id + span_id into every log line via AsyncLocalStorage</div>
+          </div>
+          <div class="flow-arrow">→</div>
+          <div class="flow-node flow-out">
+            <strong>All Signals Joined</strong>
+            <div class="flow-detail">Logs ↔ Traces in Grafana without separate pipeline</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="two-col">
+        <div>
+          <h3>Debugging Workflow</h3>
+          <div class="debug-flow">
+            <div class="debug-step"><span class="step-num">1</span> See 5xx in Grafana dashboard</div>
+            <div class="debug-arrow">↓</div>
+            <div class="debug-step"><span class="step-num">2</span> Click through to trace via <code>trace_id</code></div>
+            <div class="debug-arrow">↓</div>
+            <div class="debug-step"><span class="step-num">3</span> See the failing span in waterfall</div>
+            <div class="debug-arrow">↓</div>
+            <div class="debug-step"><span class="step-num">4</span> Click through to logs via <code>trace_id</code></div>
+            <div class="debug-arrow">↓</div>
+            <div class="debug-step"><span class="step-num">5</span> Read the error message — done</div>
+          </div>
+        </div>
+        <div>
+          <h3>User-Reported Slow Request</h3>
+          <div class="debug-flow">
+            <div class="debug-step"><span class="step-num">1</span> User gives <code>X-Request-Id</code> from response header</div>
+            <div class="debug-arrow">↓</div>
+            <div class="debug-step"><span class="step-num">2</span> Search logs by <code>req.id</code></div>
+            <div class="debug-arrow">↓</div>
+            <div class="debug-step"><span class="step-num">3</span> Log line includes <code>trace_id</code></div>
+            <div class="debug-arrow">↓</div>
+            <div class="debug-step"><span class="step-num">4</span> Pull full distributed trace</div>
+            <div class="debug-arrow">↓</div>
+            <div class="debug-step"><span class="step-num">5</span> See exactly where the 200ms went</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="callout callout-warn">Setting up all three pillars together is critical. Partial correlation is barely better than none — you'd still need grep and timestamp arithmetic.</div>
+    </section>
+
+    <!-- GRAFANA -->
+    <section class="panel" id="grafana">
+      <div class="section-header"><span class="pill pill-grafana">Operator Side</span><h2>Grafana Stack — Why Grafana?</h2></div>
+
+      <div class="callout callout-info">The application emits signals (JSON to stdout, /metrics endpoint, OTLP spans). The <strong>Grafana stack</strong> is the operator-side that collects, stores, and visualizes them — chosen because it's OSS-first and unifies all three pillars in one UI.</div>
+
+      <div class="section-block">
+        <h3>Full Pipeline</h3>
+        <div class="pipeline">
+          <div class="pipe-col">
+            <h4>Application Emits</h4>
+            <div class="pipe-item pipe-log">pino → JSON to stdout</div>
+            <div class="pipe-item pipe-met">prom-client → /metrics</div>
+            <div class="pipe-item pipe-trc">OTel SDK → OTLP/HTTP</div>
+          </div>
+          <div class="pipe-arrow-col">→<br>→<br>→</div>
+          <div class="pipe-col">
+            <h4>Collection</h4>
+            <div class="pipe-item pipe-log">Fluent Bit / Promtail</div>
+            <div class="pipe-item pipe-met">Prometheus scrape</div>
+            <div class="pipe-item pipe-trc">OTel Collector</div>
+          </div>
+          <div class="pipe-arrow-col">→<br>→<br>→</div>
+          <div class="pipe-col">
+            <h4>Storage</h4>
+            <div class="pipe-item pipe-log">Grafana Loki</div>
+            <div class="pipe-item pipe-met">Prometheus TSDB</div>
+            <div class="pipe-item pipe-trc">Grafana Tempo</div>
+          </div>
+          <div class="pipe-arrow-col">→<br>→<br>→</div>
+          <div class="pipe-col">
+            <h4>Visualization</h4>
+            <div class="pipe-item pipe-grafana">Grafana<br>Unified UI</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="two-col">
+        <div>
+          <h3>Why Grafana + Loki + Tempo + Prometheus?</h3>
+          <ul>
+            <li><strong>OSS-first</strong> — matches PG, Redis, Kafka posture</li>
+            <li><strong>Unified correlation</strong> — click from metric → trace → log in one UI</li>
+            <li><strong>No vendor lock-in</strong> — swap any backend (Mimir, VictoriaMetrics, Datadog) without app changes</li>
+            <li><strong>Cost-effective</strong> — Loki indexes labels only (not full text), Tempo uses object storage</li>
+            <li><strong>trace_id link</strong> — Grafana natively joins Loki logs ↔ Tempo traces via <code>trace_id</code> field</li>
+          </ul>
+        </div>
+        <div>
+          <h3>Local Dev Stack (Docker Compose)</h3>
+          <pre class="code-block code-sm"><code><span class="comment"># Minimum viable local observability</span>
+services:
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib
+    ports: ["4318:4318"]  <span class="comment"># OTLP/HTTP</span>
+
+  tempo:
+    image: grafana/tempo:latest
+
+  prometheus:
+    image: prom/prometheus
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml
+
+  loki:
+    image: grafana/loki:latest
+
+  grafana:
+    image: grafana/grafana
+    ports: ["3000:3000"]
+    <span class="comment"># Auto-provisions Loki, Tempo, Prometheus datasources</span></code></pre>
+        </div>
+      </div>
+
+      <div class="section-block">
+        <h3>Interview: "Why not Datadog / ELK / CloudWatch?"</h3>
+        <div class="qa-card">
+          <div class="qa-q">Q: Why not just use Datadog for everything?</div>
+          <div class="qa-a">Datadog hides cardinality cost in the bill — teams ship <code>customer_id</code> as a tag and discover it at month-end. Prometheus makes high-cardinality labels expensive (RAM), forcing the discipline we already want. Also, the app emits vendor-neutral formats (OTLP, Prometheus metrics, JSON logs) — Datadog can consume all of these via an OTel collector if the org mandates it later, without changing app code.</div>
+        </div>
+        <div class="qa-card">
+          <div class="qa-q">Q: Why not ELK (Elasticsearch + Logstash + Kibana)?</div>
+          <div class="qa-a">ELK indexes full log content — expensive at scale. Loki indexes only labels (like Prometheus for logs), which is drastically cheaper. For a service emitting structured JSON, label-based queries cover 95% of use cases. And Grafana already visualizes metrics+traces; adding Kibana means two dashboards.</div>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <footer class="footer">
+    <div class="container">
+      <p>Booking Service Observability Strategy · Based on <code>docs/observability/strategy.md</code></p>
+    </div>
+  </footer>
+
+  <script src="app.js"></script>
+</body>
+</html>
+</code></pre>

@@ -1,0 +1,16 @@
+# Prometheus scrape config for the booking-service.
+# Scrapes /metrics on booking-service:8080 every 10 seconds.
+
+global:
+  scrape_interval: 10s
+  evaluation_interval: 10s
+
+scrape_configs:
+  - job_name: "booking-service"
+    static_configs:
+      - targets: ["booking-service:8080"]
+        labels:
+          service: "booking-service"
+          env: "development"
+    metrics_path: /metrics
+    scrape_interval: 5s

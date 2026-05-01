@@ -1,0 +1,68 @@
+---
+description: UserRepository port + Prisma adapter rules.
+globs:
+  - "src/domain/ports/user.repository.ts"
+  - "src/domain/user/**"
+  - "src/application/users/**"
+  - "src/infrastructure/persistence/user.repository.ts"
+  - "src/infrastructure/persistence/mappers/user.mapper.ts"
+  - "src/interface/http/users/**"
+  - "test/fakes/fake-user.repository.ts"
+  - "test/users.e2e-spec.ts"
+alwaysApply: false
+---
+
+# Users — repository (DB connection layer)
+
+The User aggregate is owned by this service. The persistence boundary is the `UserRepository` port in [`src/domain/ports/user.repository.ts`](../../src/domain/ports/user.repository.ts); the production implementation is `PrismaUserRepository` at `src/infrastructure/persistence/user.repository.ts` (TBD — create alongside the first prod-wired feature). Standard port → repository → Prisma chain. **No HTTP adapter, no mock-vs-real driver split, no `UsersModule` shell.**
+
+## Port shape
+
+| Method | Returns | Notes |
+|---|---|---|
+| `findById(userId)` | `UserProfile \| null` | Caller decides whether `null` means 404. `UsersService` adds the not-found check. |
+| `findByEmail(email)` | `UserProfile \| null` | Same pattern. Email is normalized (trim + lowercase) by the adapter. |
+| `create(input)` | `UserProfile` | DB assigns `id` via `@default(uuid())`. Throws `UserAlreadyExistsError` on duplicate email. |
+| `list(query)` | `UserProfilePage` | Atomic page+total via `prisma.$transaction([findMany, count])`. |
+| `update(userId, input)` | `UserProfile` | Throws `UserNotFoundError` if missing. |
+| `delete(userId)` | `void` | Throws `UserNotFoundError` if missing. |
+
+DI token: `USER_REPOSITORY` (Symbol). Inject via `@Inject(USER_REPOSITORY)`.
+
+## What `PrismaUserRepository` must do
+
+- Implement every method on `UserRepository`.
+- Omit `id` from `prisma.user.create({ data })` — the DB assigns the UUID.
+- Map Prisma errors to domain errors at the boundary:
+  - `P2002` (unique violation on `email`) → `UserAlreadyExistsError`
+  - `P2025` (record not found on update/delete) → `UserNotFoundError`
+- Map Prisma rows to domain entities via [`mappers/user.mapper.ts`](../../src/infrastructure/persistence/mappers/user.mapper.ts).
+- Take `PrismaService` as its only constructor dependency. Never instantiate `PrismaClient`.
+
+## Test fakes vs production repository
+
+| Layer | What it uses | Why |
+|---|---|---|
+| Application unit tests | [`FakeUserRepository`](../../test/fakes/fake-user.repository.ts) (in-memory) | Fastest feedback. Mirrors the production contract. |
+| HTTP e2e | `FakeUserRepository` overriding `USER_REPOSITORY` | Exercises controller + validation pipe + filter without Postgres. See [`test/users.e2e-spec.ts`](../../test/users.e2e-spec.ts). |
+| Repository integration tests (TBD) | Real Postgres from compose, gated on `DATABASE_URL` | Verifies Prisma error → domain error mapping. Live as `*.integration-spec.ts` next to the source. |
+
+Don't add branches or flags to the production repository to support tests. If a test needs different behavior, override the port with a hand-written fake at the DI boundary — that is the whole point of the port.
+
+## Fixture data
+
+Dev User / Customer / Vehicle rows are seeded by [`prisma/seed.ts`](../../prisma/seed.ts) — idempotent upserts on stable UUIDs. Apply via `npx prisma db seed`. E2E suites that need them run that after `migrate reset`. Tests that don't reference seeded data prefer the fake-repository pattern and skip the DB entirely.
+
+Seed-file rules:
+- Stable UUIDs. Pick once, never change — tests will hard-reference them.
+- Deterministic: no `Date.now()`, no `Math.random()`. Fixed ISO strings for any timestamps.
+- Minimal but realistic: enough rows to cover the scenarios in [`../../docs/scenario/content.md`](../../../docs/scenario/content.md) (Alice + Honda Civic at minimum).
+- No PII. Names like `Alice Test`, emails like `alice@example.test`.
+
+## Don'ts
+
+- Don't add a `Mock*Repository` or `Http*Repository`. One Prisma repository per aggregate; tests use the in-memory fake.
+- Don't put the repository under `src/modules/users/infrastructure/`. There is no `src/modules/` tree — repositories live in `src/infrastructure/persistence/`.
+- Don't grow business logic in the fake. If branches show up, the test belongs at a different layer.
+- Don't expose seed data from a controller. Fixtures are an internal concern.
+- Don't `console.log` from the repository. Use the injected pino logger; trace correlation depends on it.

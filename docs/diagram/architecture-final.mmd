@@ -1,0 +1,96 @@
+---
+title: Service Scheduler — Final Architecture (Best Practice)
+---
+graph TB
+    classDef client fill:#e7f1ff,stroke:#0d6efd,stroke-width:1.5px,color:#052c65
+    classDef ok     fill:#d4edda,stroke:#28a745,stroke-width:1.5px,color:#155724
+    classDef store  fill:#e2e3e5,stroke:#6c757d,stroke-width:1.5px,color:#383d41
+    classDef redis  fill:#fff3cd,stroke:#ffc107,stroke-width:1.5px,color:#856404
+    classDef relay  fill:#fff3cd,stroke:#ffc107,stroke-width:1.5px,color:#856404
+    classDef bus    fill:#cfe2ff,stroke:#0d6efd,stroke-width:2.5px,color:#052c65
+    classDef dlq    fill:#f8d7da,stroke:#dc3545,stroke-width:1.5px,color:#721c24
+    classDef note   fill:#f8f9fa,stroke:#adb5bd,stroke-width:1px,color:#495057
+
+    %% ============ CLIENT TIER ============
+    Client([Customer browser /<br/>mobile app])
+    LB["Load Balancer"]
+    Client --> LB
+
+    %% ============ APPLICATION TIER ============
+    subgraph App["Scheduler Service — N stateless instances"]
+        direction LR
+        S1["Scheduler 1"]
+        S2["Scheduler 2"]
+        Sn["Scheduler N"]
+    end
+    LB ==> App
+
+    %% ============ HOT READ PATH — CACHE-ASIDE ============
+    Cache[("Redis cache<br/>avail:bay:&lt;id&gt;:&lt;slot&gt;<br/>avail:tech:&lt;id&gt;:&lt;slot&gt;<br/>EX 60s")]
+
+    App -->|"1a. GET avail:*"| Cache
+    Cache -. "miss" .-> App
+
+    %% ============ DISTRIBUTED LOCK — REDLOCK QUORUM ============
+    subgraph Redlock["Redlock — 5 independent Redis masters (3-of-5 quorum, no replication)"]
+        direction LR
+        R1[("Master 1")]
+        R2[("Master 2")]
+        R3[("Master 3")]
+        R4[("Master 4")]
+        R5[("Master 5")]
+    end
+
+    App ==>|"2. SET lock:bay:* / lock:tech:*<br/>NX PX=TTL  parallel to all 5<br/>granted iff &gt;= 3 OK and elapsed &lt; TTL"| Redlock
+
+    %% ============ SOURCE OF TRUTH — POSTGRESQL ============
+    DB[("PostgreSQL<br/>appointments + outbox<br/>(same transaction)")]
+
+    App -->|"3. BEGIN TX<br/>INSERT appointment<br/>INSERT outbox row<br/>COMMIT"| DB
+    App -->|"4. token-checked Lua DEL<br/>(release on all 5 nodes)"| Redlock
+    App -->|"5. invalidate avail:* keys"| Cache
+    App -. "6. 200 OK 'Confirmed'<br/>(~150 ms hot-path p99)" .-> Client
+
+    %% ============ EVENT BUS — OUTBOX + KAFKA ============
+    Relay["CDC Relay<br/>Debezium / WAL tail"]
+    Kafka[["Kafka<br/>appointment.events<br/>key = appointment_id<br/>RF=3, min.ISR=2, acks=all"]]
+
+    DB -->|"7. tail WAL,<br/>read unpublished outbox rows"| Relay
+    Relay -->|"8. publish<br/>(at-least-once)"| Kafka
+
+    %% ============ CONSUMERS — INDEPENDENT GROUPS, IDEMPOTENT ============
+    subgraph Consumers["Consumer groups — independent, idempotent, at-least-once"]
+        direction LR
+        Notif["notification-svc<br/>SMS / email / push"]
+        Bill["billing-svc<br/>Stripe deposit capture"]
+        Parts["parts-svc<br/>reserve SKU"]
+        Roster["roster-svc<br/>technician calendar"]
+        BI["analytics-svc<br/>BI / funnel"]
+        Audit["audit-svc<br/>compliance log"]
+    end
+
+    Kafka --> Notif
+    Kafka --> Bill
+    Kafka --> Parts
+    Kafka --> Roster
+    Kafka --> BI
+    Kafka --> Audit
+
+    DLQ[["DLQ<br/>appointment.events.dlq"]]
+    Notif  -. "retry exhausted" .-> DLQ
+    Bill   -. "retry exhausted" .-> DLQ
+    Parts  -. "retry exhausted" .-> DLQ
+    Roster -. "retry exhausted" .-> DLQ
+
+    %% ============ DESIGN NOTES ============
+    Note1>"Phase 1: cache-aside keeps reads sub-ms.<br/>Phase 3: Redlock keeps the booking decision safe.<br/>Phase 4: outbox + Kafka decouples side-effects<br/>and kills the dual-write hazard."]
+
+    %% ============ STYLES ============
+    class Client client
+    class LB,S1,S2,Sn,Notif,Bill,Parts,Roster,BI,Audit ok
+    class Cache,R1,R2,R3,R4,R5 redis
+    class DB store
+    class Relay relay
+    class Kafka bus
+    class DLQ dlq
+    class Note1 note

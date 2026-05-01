@@ -1,0 +1,122 @@
+---
+title: Distributed Lock Evolution — Scheduler Service
+---
+graph TD
+    classDef ok     fill:#d4edda,stroke:#28a745,stroke-width:1.5px,color:#155724
+    classDef warn   fill:#fff3cd,stroke:#ffc107,stroke-width:1.5px,color:#856404
+    classDef bad    fill:#f8d7da,stroke:#dc3545,stroke-width:2px,color:#721c24
+    classDef store  fill:#e2e3e5,stroke:#6c757d,stroke-width:1.5px,color:#383d41
+    classDef cons   fill:#f8d7da,stroke:#dc3545,stroke-width:1px,color:#58151c
+    classDef final  fill:#cfe2ff,stroke:#0d6efd,stroke-width:2.5px,color:#052c65
+
+    %% ============ PHASE 0: WHY DB, NOT REDIS ONLY ============
+    subgraph P0["Phase 0 — Why DB, not Redis only?"]
+        direction LR
+
+        subgraph P0_A["Option A — Redis only"]
+            direction LR
+            AppA["App Server"] -->|"read / write"| RedisOnly[("Redis")]
+            ConsA>"- Volatile RAM, weak durability<br/>- No multi-row ACID<br/>- No JOIN / weak indexes<br/>- ~10-30x $/GB vs disk"]
+        end
+
+        subgraph P0_B["Option B — DB only"]
+            direction LR
+            AppB["App Server"] -->|"read / write"| DBOnly[("PostgreSQL")]
+            ConsB>"- Disk I/O ~5-10 ms<br/>- ~5k QPS per node<br/>- Hot-row contention<br/>- Too slow for hot reads"]
+        end
+    end
+
+    %% ============ PHASE 1: CACHE-ASIDE ============
+    subgraph P1["Phase 1 — Cache-Aside (Redis cache + DB truth)"]
+        direction LR
+        Client1([User]) --> App1["App Server"]
+        App1 -->|"1. GET"| Cache1[("Redis cache")]
+        Cache1 -. "miss" .-> App1
+        App1 -->|"2. SELECT"| DB1[("PostgreSQL")]
+        DB1  -. "row" .-> App1
+        App1 -->|"3. SET + TTL"| Cache1
+
+        Cons1>"- Many scheduler instances race on shared state<br/>- Need a distributed mutex"]
+    end
+
+    %% ============ PHASE 2: SINGLE-MASTER LOCK ============
+    subgraph P2["Phase 2 — Lock on a single Redis master"]
+        direction LR
+        SchedA["Scheduler A"] -->|"1. SET lock NX"| Master2[("Redis Master<br/>crashes")]
+        Master2 -. "2. replication FAILS" .-x Replica2[("Redis Replica<br/>promoted")]
+        SchedB["Scheduler B"] -->|"3. SET lock NX"| Replica2
+
+        Bug2>"SPLIT-BRAIN<br/>A and B both hold the lock"]
+
+        Cons2>"- Async replication loses lock state on failover<br/>- Single master = SPOF<br/>- Need majority across independent nodes"]
+    end
+
+    %% ============ PHASE 3: REDLOCK (SAFE BOOKING DECISION) ============
+    subgraph P3["Phase 3 — Redlock quorum  (safe booking decision)"]
+        direction TB
+        Sched3["Scheduler Service"]
+
+        subgraph Quorum["Quorum: floor(N/2)+1 = 3 of 5"]
+            direction LR
+            R1[("Master 1")]
+            R2[("Master 2")]
+            R3[("Master 3")]
+            R4[("Master 4")]
+            R5[("Master 5")]
+        end
+
+        Sched3 ==>|"SET lock NX PX=TTL<br/>parallel"| R1
+        Sched3 ==> R2
+        Sched3 ==> R3
+        Sched3 ==> R4
+        Sched3 ==> R5
+    end
+
+    %% ============ PHASE 4: OUTBOX + KAFKA EVENTS (FINAL — BEST PRACTICE) ============
+    subgraph P4["Phase 4 — Outbox + Kafka events  (FINAL — best practice)"]
+        direction TB
+        Sched4["Scheduler Service<br/>(holds Redlock)"]
+        DB4[("PostgreSQL<br/>appointments + outbox<br/>same transaction")]
+        Relay["CDC Relay<br/>(Debezium / WAL tail)"]
+        Kafka[["Kafka<br/>appointment.events<br/>key = appointment_id"]]
+
+        N["notification-svc<br/>SMS / email"]
+        Pay["billing-svc<br/>Stripe deposit capture"]
+        Parts["parts-svc<br/>reserve SKU"]
+        Cal["roster-svc<br/>technician calendar"]
+        BI["analytics-svc<br/>BI / funnel"]
+        Audit["audit-svc<br/>compliance log"]
+        DLQ[["DLQ<br/>appointment.events.dlq"]]
+
+        Sched4 -->|"1. INSERT appointment<br/>+ INSERT outbox row<br/>(same TX, then COMMIT)"| DB4
+        DB4 -->|"2. tail WAL"| Relay
+        Relay -->|"3. publish acks=all"| Kafka
+
+        Kafka --> N
+        Kafka --> Pay
+        Kafka --> Parts
+        Kafka --> Cal
+        Kafka --> BI
+        Kafka --> Audit
+
+        N -. "retry exhausted" .-> DLQ
+        Pay -. "retry exhausted" .-> DLQ
+        Parts -. "retry exhausted" .-> DLQ
+
+        Cons4>"- Decouples side-effects from the hot path<br/>- Outbox kills dual-write hazard<br/>- Replayable log for new consumers / backfills<br/>- Per-key ordering via partition = appointment_id"]
+    end
+
+    %% ============ PROGRESSION ============
+    P0 -. "combine cache + DB" .-> P1
+    P1 -. "need mutex" .-> P2
+    P2 -. "need quorum" .-> P3
+    P3 -. "decouple side-effects<br/>kill dual-write hazard" .-> P4
+
+    %% ============ STYLES ============
+    class Client1,App1,AppA,AppB,Sched3,Sched4,N,Pay,Parts,Cal,BI,Audit ok
+    class Cache1,DB1,DBOnly,R1,R2,R3,R4,R5,DB4,Kafka,DLQ store
+    class RedisOnly warn
+    class SchedA,SchedB,Replica2,Relay warn
+    class Master2,Bug2 bad
+    class ConsA,ConsB,Cons1,Cons2,Cons4 cons
+    class P4 final

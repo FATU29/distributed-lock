@@ -1,0 +1,181 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum AppointmentStatus {
+  PENDING
+  CONFIRMED
+  CANCELLED
+}
+
+enum TechnicalConfigScope {
+  GLOBAL
+  DEALERSHIP
+  TECHNICIAN
+}
+
+model User {
+  id          String   @id @default(uuid()) @db.Uuid
+  email       String   @unique
+  displayName String?  @map("display_name")
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  customer Customer?
+
+  @@map("users")
+}
+
+model Customer {
+  id        String   @id @default(uuid()) @db.Uuid
+  userId    String   @unique @map("user_id") @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  user     User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  vehicles Vehicle[]
+  appointments Appointment[]
+
+  @@map("customers")
+}
+
+model Vehicle {
+  id         String   @id @default(uuid()) @db.Uuid
+  vin        String   @unique
+  customerId String   @map("customer_id") @db.Uuid
+  label      String?
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt  DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  customer     Customer      @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  appointments Appointment[]
+
+  @@map("vehicles")
+}
+
+model Dealership {
+  id        String   @id @default(uuid()) @db.Uuid
+  code      String   @unique
+  name      String
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  serviceBays ServiceBay[]
+  technicians Technician[]
+  appointments Appointment[]
+
+  @@map("dealerships")
+}
+
+model ServiceType {
+  id               String   @id @default(uuid()) @db.Uuid
+  code             String   @unique
+  name             String
+  durationMinutes  Int      @map("duration_minutes")
+  requiredSkillTag String?  @map("required_skill_tag")
+  createdAt        DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt        DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  technicianQualifications TechnicianQualifiedService[]
+  appointments             Appointment[]
+
+  @@map("service_types")
+}
+
+model ServiceBay {
+  id           String   @id @default(uuid()) @db.Uuid
+  dealershipId String   @map("dealership_id") @db.Uuid
+  label        String
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt    DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  dealership   Dealership    @relation(fields: [dealershipId], references: [id], onDelete: Cascade)
+  appointments Appointment[]
+
+  @@index([dealershipId])
+  @@map("service_bays")
+}
+
+model Technician {
+  id           String   @id @default(uuid()) @db.Uuid
+  dealershipId String   @map("dealership_id") @db.Uuid
+  name         String
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt    DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  dealership        Dealership                   @relation(fields: [dealershipId], references: [id], onDelete: Cascade)
+  qualifiedServices TechnicianQualifiedService[]
+  appointments      Appointment[]
+
+  @@index([dealershipId])
+  @@map("technicians")
+}
+
+model TechnicianQualifiedService {
+  technicianId  String @map("technician_id") @db.Uuid
+  serviceTypeId String @map("service_type_id") @db.Uuid
+
+  technician  Technician  @relation(fields: [technicianId], references: [id], onDelete: Cascade)
+  serviceType ServiceType @relation(fields: [serviceTypeId], references: [id], onDelete: Cascade)
+
+  @@id([technicianId, serviceTypeId])
+  @@map("technician_qualified_services")
+}
+
+model TechnicalConfig {
+  id        String               @id @default(uuid()) @db.Uuid
+  scope     TechnicalConfigScope @map("scope")
+  scopeId   String               @default("00000000-0000-0000-0000-000000000000") @map("scope_id") @db.Uuid
+  configKey String               @map("config_key")
+  value     Json
+  createdAt DateTime             @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime             @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@unique([scope, scopeId, configKey])
+  @@index([scope, scopeId])
+  @@map("technical_configs")
+}
+
+model Appointment {
+  id            String            @id @default(uuid()) @db.Uuid
+  customerId    String            @map("customer_id") @db.Uuid
+  vehicleVin    String            @map("vehicle_vin")
+  dealershipId  String            @map("dealership_id") @db.Uuid
+  bayId         String            @map("bay_id") @db.Uuid
+  technicianId  String            @map("technician_id") @db.Uuid
+  serviceTypeId String            @map("service_type_id") @db.Uuid
+  slotStart     DateTime          @map("slot_start") @db.Timestamptz(6)
+  slotEnd       DateTime          @map("slot_end") @db.Timestamptz(6)
+  status        AppointmentStatus @default(CONFIRMED)
+  createdAt     DateTime          @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt     DateTime          @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  customer    Customer    @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  vehicle     Vehicle     @relation(fields: [vehicleVin], references: [vin], onDelete: Restrict)
+  dealership  Dealership  @relation(fields: [dealershipId], references: [id], onDelete: Restrict)
+  bay         ServiceBay  @relation(fields: [bayId], references: [id], onDelete: Restrict)
+  technician  Technician  @relation(fields: [technicianId], references: [id], onDelete: Restrict)
+  serviceType ServiceType @relation(fields: [serviceTypeId], references: [id], onDelete: Restrict)
+
+  @@index([bayId, slotStart, slotEnd])
+  @@index([technicianId, slotStart, slotEnd])
+  @@map("appointments")
+}
+
+model Outbox {
+  id           String    @id @default(uuid()) @db.Uuid
+  aggregateType String   @map("aggregate_type")
+  aggregateId   String   @map("aggregate_id")
+  eventType     String   @map("event_type")
+  payload       Json
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  publishedAt   DateTime? @map("published_at") @db.Timestamptz(6)
+
+  @@index([publishedAt])
+  @@map("outbox")
+}

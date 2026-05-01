@@ -1,0 +1,101 @@
+---
+description: Service-wide rules for the booking-service scheduler. Always loaded when working in this service.
+alwaysApply: true
+---
+
+# booking-service — service-wide rules
+
+Canonical guide: [`CLAUDE.md`](../../CLAUDE.md). Mirror: [`AGENTS.md`](../../AGENTS.md). AI checklist (CRUD fakes + unit tests): [`../../docs/ai/README.md`](../../docs/ai/README.md). On drift, CLAUDE.md wins.
+
+This is the **scheduler service** from [`../../docs/diagram/architecture-final.mmd`](../../docs/diagram/architecture-final.mmd). Single service in the repo. Aggregates owned by this service (User, Customer, Vehicle, Appointment, ...) live behind ports in `src/domain/ports/` and are persisted via Prisma repositories in `src/infrastructure/persistence/`.
+
+## Read first when changing booking-flow code
+
+- [`../../docs/scenario/content.md`](../../docs/scenario/content.md) — requirements + architecture rationale. Load-bearing.
+- [`../../docs/diagram/WHY-ENHANCE-PHASE.md`](../../docs/diagram/WHY-ENHANCE-PHASE.md) — why the architecture is shaped this way.
+
+## Source layout
+
+```
+prisma/                    # schema.prisma + migrations + seed.ts
+src/
+  domain/                  # entities, VOs, errors, ports — pure TS, no Nest, no I/O
+    ports/                 # all repository ports; barrel ports/index.ts
+  application/             # aggregate services (CRUD) + future use-cases — ports only
+    users/, dealerships/, service-types/, service-bays/, technicians/, vehicles/, appointments/
+  infrastructure/
+    prisma/                # PrismaService wrapper
+    persistence/           # Prisma*Repository + mappers (user, dealership, service-type, service-bay, technician, vehicle, appointment, …)
+    observability/
+    cache/                 # (booking feature) RedisAvailabilityCache
+    locking/               # RedlockClient
+    messaging/             # outbox writer
+    config/
+  interface/http/          # per-resource folders + filters/
+    users/, dealerships/, service-types/, service-bays/, technicians/, vehicles/, appointments/
+  app.module.ts            # imports feature *.module.ts
+test/
+  fakes/                   # FakeUserRepository, FakeDealershipRepository, … — mandatory pairing with *.service.spec.ts for each CRUD aggregate
+  users.e2e-spec.ts
+  e2e/
+```
+
+See [`../../docs/ai/README.md`](../../docs/ai/README.md) for the **mandatory unit-test checklist** when adding CRUD.
+
+## The booking flow (don't deviate)
+
+```
+1. Validate request (DTO + domain VOs).
+2. Acquire Redlock on lock:bay:{bayId}:{slotStart} and lock:tech:{techId}:{slotStart}.
+3. Re-check availability against Postgres (cache may be stale — the cache is not authoritative).
+4. INSERT Appointment + INSERT outbox row in a single prisma.$transaction.
+5. Invalidate avail:bay:* / avail:tech:* cache keys.
+6. Release locks via token-checked Lua DEL on all 5 nodes.
+```
+
+`BookAppointmentUseCase` orchestrates all six steps. One file. Don't split it across multiple use-cases or push step 3 into the repository.
+
+## Performance targets (acceptance criteria)
+
+| Path | p99 |
+|---|---|
+| Availability read (cache hit) | < 5 ms |
+| Availability read (cache miss) | < 25 ms |
+| Lock acquire (uncontended) | < 50 ms |
+| Confirm booking end-to-end | < 200 ms |
+
+## Domain errors → HTTP
+
+| Error | HTTP |
+|---|---|
+| DTO/VO validation | 400 |
+| `VehicleNotEligibleError`, `NoQualifiedTechnicianError`, `BayUnavailableError`, `SlotAlreadyBookedError` | 409 |
+| `LockNotAcquiredError` after retries | 503 |
+| Entity not found | 404 |
+
+The interface-layer exception filter is the single mapping point. Domain throws plain typed errors only.
+
+## Tests
+
+- **Unit** (domain + application): hand-written fakes in `test/fakes/` implementing the ports. No mocking libraries. No Prisma mocks. Coverage targets: domain ≥ 95%, application ≥ 90%. **Every CRUD aggregate must have `fake-<aggregate>.repository.ts` + `<aggregate>.service.spec.ts`** — see [`../../docs/ai/README.md`](../../docs/ai/README.md).
+- **Integration** (infrastructure): real Postgres + real Redis from `docker-compose.dev.yml`. Mocking those defeats the purpose.
+- **E2E**: `test/e2e/`, supertest against booted Nest app with all real adapters.
+
+`BookAppointmentUseCase` spec must cover: happy path, lock not acquired, lock acquired but PG re-check conflict, PG transaction failure, cache invalidation failure (booking still confirmed), each business-rule error.
+
+**Do not add `POST /appointments` as plain CRUD** — appointment creation belongs to the booking use-case (Redlock + PG + outbox). Listing/patching/deleting existing rows is separate.
+
+## Service-specific don'ts
+
+- Don't write `Appointment` to Redis. Redis is cache + lock store, never source of truth.
+- Don't take the booking lock against the cache Redis (`redis-cache`). Locks go to `redlock-1`…`redlock-5`.
+- Don't release Redlock with plain `DEL` — token-checked Lua only.
+- Don't add a single global "booking lock". Locks are per `(bay, slot)` and per `(technician, slot)`.
+- Don't publish to Kafka from a controller, use-case, or repository. Outbox row only.
+- Don't skip the in-lock PG re-check.
+- Don't import `@prisma/client` outside `infrastructure/`. Map to domain entities at the repository boundary.
+- Don't reach for `prisma migrate dev` in production environments — `prisma migrate deploy` only.
+- Don't add a `Mock*Repository` / `Http*Repository` driver split. One Prisma repository per aggregate; tests use the in-memory fake under `test/fakes/`.
+- Don't reintroduce `src/modules/<feature>/infrastructure/`. Repositories live in `src/infrastructure/persistence/`; per-feature DI wiring (when needed) lives in `<feature>.module.ts` next to the controller.
+- Don't expose seed data from a controller.
+- Don't add read replicas, geo-distribution, CQRS, or event sourcing — out of scope per [`../../docs/scenario/content.md`](../../docs/scenario/content.md) §8.

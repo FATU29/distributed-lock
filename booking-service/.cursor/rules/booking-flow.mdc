@@ -1,0 +1,54 @@
+---
+description: Booking-flow use-case rules. Loaded for files in src/application/book-appointment.
+globs:
+  - "src/application/book-appointment/**"
+  - "src/application/**/book-*.ts"
+alwaysApply: false
+---
+
+# BookAppointmentUseCase — orchestration rules
+
+The use-case in this directory orchestrates the full booking flow. It is the **only** place this sequence is encoded.
+
+## Step sequence (verbatim from the scenario doc)
+
+```
+1. Validate request (vehicle, service type, dealership, desired window).
+2. Acquire Redlock on bay + technician keys for the slot window.
+3. Re-check availability against PostgreSQL (truth) — cache may be stale.
+4. INSERT Appointment + INSERT outbox row in a single transaction; commit.
+5. Invalidate / update affected cache entries.
+6. Release locks via token-checked Lua DEL (against all 5 nodes).
+```
+
+## What the use-case may inject
+
+Only ports — never concrete adapters:
+
+- `BookingRepository`
+- `AvailabilityCache`
+- `DistributedLock`
+- `UserRepository`
+- `UnitOfWork`
+- `Clock`
+
+If a use-case is reaching for something not in this list, define a port for it first.
+
+## Required spec coverage
+
+A `book-appointment.use-case.spec.ts` must include:
+
+1. **Happy path** — confirms appointment, writes outbox row, invalidates cache, releases lock.
+2. **Lock not acquired** (quorum fails) — throws `LockNotAcquiredError`, no DB write, no cache invalidate.
+3. **Lock acquired, PG re-check finds a conflict** — throws `SlotAlreadyBookedError`, lock is released.
+4. **PG transaction fails after lock acquired** — error propagates, lock is released.
+5. **Cache invalidation fails after successful insert** — booking still considered confirmed (cache will TTL out); error logged, not raised. The cache is not authoritative.
+6. **Vehicle not eligible / no qualified technician / bay unavailable** — appropriate domain error, no side effects.
+
+## Don'ts
+
+- Don't push step 3 (PG re-check) into the repository. Keep orchestration visible in the use-case.
+- Don't split the flow across multiple use-cases.
+- Don't catch and rethrow domain errors as `HttpException`. The interface filter does that.
+- Don't call Kafka from this use-case. Outbox row only — that's step 4.
+- Don't skip lock release on the error path. Use try/finally or an equivalent that guarantees release.
