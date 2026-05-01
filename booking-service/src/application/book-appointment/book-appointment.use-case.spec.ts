@@ -1,7 +1,12 @@
 import { randomUUID } from 'node:crypto';
 
+import { Logger } from '@nestjs/common';
+
 import { FakeBookingRepository } from '../../../test/fakes/fake-booking.repository';
-import { FakeDistributedLock } from '../../../test/fakes/fake-distributed-lock';
+import {
+  FakeDistributedLock,
+  redisReleasePartitionError,
+} from '../../../test/fakes/fake-distributed-lock';
 import { FakeHolidayRepository } from '../../../test/fakes/fake-holiday.repository';
 import { FakePaymentGateway } from '../../../test/fakes/fake-payment.gateway';
 import { FakeWorkingHoursRepository } from '../../../test/fakes/fake-working-hours.repository';
@@ -164,12 +169,20 @@ describe('BookAppointmentUseCase', () => {
   });
 
   it('swallows lock release failures so the booking still resolves', async () => {
-    lock.releaseError = new Error('redis partition');
+    const warnSpy = jest.spyOn(Logger.prototype, 'warn').mockImplementation();
+    lock.failNextRelease(redisReleasePartitionError());
     const input = buildInput(dealershipId);
 
-    const appointment = await useCase.execute(input);
-    expect(appointment.status).toBe('CONFIRMED');
-    expect(lock.releaseCalls).toHaveLength(1);
+    try {
+      const appointment = await useCase.execute(input);
+      expect(appointment.status).toBe('CONFIRMED');
+      expect(lock.releaseCalls).toHaveLength(1);
+      expect(warnSpy).toHaveBeenCalledWith(
+        expect.stringContaining('Lock release failed; relying on TTL'),
+      );
+    } finally {
+      warnSpy.mockRestore();
+    }
   });
 
   it('throws OutsideWorkingHoursError before touching the lock when the slot falls on a closed day', async () => {
