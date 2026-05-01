@@ -2,7 +2,7 @@
 
 Base path: `/appointments`
 
-There is **no** `POST /appointments` in the current HTTP layer (appointments are created via the booking use-case elsewhere, not exposed as a REST create in this controller).
+There is **no** `POST /appointments` in the current HTTP layer. To create an appointment, call **`POST /bookings`** — see [bookings.md](./bookings.md) — which runs the canonical Redlock + payment + transactional-insert use-case.
 
 Shared types:
 

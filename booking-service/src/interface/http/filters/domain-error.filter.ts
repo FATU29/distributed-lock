@@ -11,15 +11,27 @@ import type { Response } from 'express';
 import {
   AppointmentNotFoundError,
   InvalidSlotWindowError,
+  SlotAlreadyBookedError,
 } from '../../../domain/appointment/errors';
 import {
   DealershipCodeAlreadyExistsError,
   DealershipNotFoundError,
 } from '../../../domain/dealership/errors';
+import { LockNotAcquiredError } from '../../../domain/locking/lock-not-acquired.error';
+import { PaymentDeclinedError } from '../../../domain/payment/errors';
 import {
   EmptyUpdateError,
   ForeignKeyReferenceError,
 } from '../../../domain/reference.errors';
+import {
+  DealershipClosedOnHolidayError,
+  HolidayAlreadyExistsError,
+  HolidayNotFoundError,
+  InvalidWorkingHoursError,
+  OutsideWorkingHoursError,
+  WorkingHoursAlreadyExistsError,
+  WorkingHoursNotFoundError,
+} from '../../../domain/schedule/errors';
 import { ServiceBayNotFoundError } from '../../../domain/service-bay/errors';
 import {
   ServiceTypeCodeAlreadyExistsError,
@@ -100,6 +112,58 @@ const MAPPINGS: ReadonlyArray<{
   {
     type: InvalidSlotWindowError,
     mapping: { status: HttpStatus.BAD_REQUEST, code: 'INVALID_SLOT_WINDOW' },
+  },
+  {
+    type: SlotAlreadyBookedError,
+    mapping: { status: HttpStatus.CONFLICT, code: 'SLOT_ALREADY_BOOKED' },
+  },
+  {
+    type: LockNotAcquiredError,
+    mapping: {
+      status: HttpStatus.SERVICE_UNAVAILABLE,
+      code: 'LOCK_NOT_ACQUIRED',
+    },
+  },
+  {
+    type: PaymentDeclinedError,
+    mapping: { status: HttpStatus.PAYMENT_REQUIRED, code: 'PAYMENT_DECLINED' },
+  },
+  {
+    type: WorkingHoursNotFoundError,
+    mapping: { status: HttpStatus.NOT_FOUND, code: 'WORKING_HOURS_NOT_FOUND' },
+  },
+  {
+    type: WorkingHoursAlreadyExistsError,
+    mapping: {
+      status: HttpStatus.CONFLICT,
+      code: 'WORKING_HOURS_ALREADY_EXISTS',
+    },
+  },
+  {
+    type: InvalidWorkingHoursError,
+    mapping: { status: HttpStatus.BAD_REQUEST, code: 'INVALID_WORKING_HOURS' },
+  },
+  {
+    type: HolidayNotFoundError,
+    mapping: { status: HttpStatus.NOT_FOUND, code: 'HOLIDAY_NOT_FOUND' },
+  },
+  {
+    type: HolidayAlreadyExistsError,
+    mapping: { status: HttpStatus.CONFLICT, code: 'HOLIDAY_ALREADY_EXISTS' },
+  },
+  {
+    type: OutsideWorkingHoursError,
+    mapping: {
+      status: HttpStatus.CONFLICT,
+      code: 'OUTSIDE_WORKING_HOURS',
+    },
+  },
+  {
+    type: DealershipClosedOnHolidayError,
+    mapping: {
+      status: HttpStatus.CONFLICT,
+      code: 'DEALERSHIP_CLOSED_ON_HOLIDAY',
+    },
   },
   {
     type: ForeignKeyReferenceError,

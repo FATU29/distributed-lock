@@ -1,113 +1,203 @@
 import { PrismaClient, TechnicalConfigScope } from '@prisma/client';
+import { v4 as uuidv4 } from 'uuid';
 
 const prisma = new PrismaClient();
 
 const GLOBAL_SCOPE_ID = '00000000-0000-0000-0000-000000000000';
 
-const DEALERSHIP_ID = 'd1000000-0000-4000-8000-000000000001';
-const BAY_A_ID = 'b1000000-0000-4000-8000-000000000001';
-const BAY_B_ID = 'b1000000-0000-4000-8000-000000000002';
-const TECH_ALICE_ID = 'a1000000-0000-4000-8000-000000000001';
-const TECH_BOB_ID = 'a1000000-0000-4000-8000-000000000002';
-const SVC_OIL_ID = 'c1000000-0000-4000-8000-000000000001';
-const SVC_BRAKE_ID = 'c1000000-0000-4000-8000-000000000002';
+async function upsertServiceBay(dealershipId: string, label: string) {
+  const existing = await prisma.serviceBay.findFirst({
+    where: { dealershipId, label },
+  });
+  if (existing) {
+    return prisma.serviceBay.update({
+      where: { id: existing.id },
+      data: { label },
+    });
+  }
+  return prisma.serviceBay.create({
+    data: { id: uuidv4(), dealershipId, label },
+  });
+}
+
+async function upsertTechnician(dealershipId: string, name: string) {
+  const existing = await prisma.technician.findFirst({
+    where: { dealershipId, name },
+  });
+  if (existing) {
+    return prisma.technician.update({
+      where: { id: existing.id },
+      data: { name },
+    });
+  }
+  return prisma.technician.create({
+    data: { id: uuidv4(), dealershipId, name },
+  });
+}
+
+const OPEN_8_AM = 8 * 60;
+const CLOSE_6_PM = 18 * 60;
+
+async function upsertWorkingHours(
+  dealershipId: string,
+  dayOfWeek: number,
+  openMinutes: number,
+  closeMinutes: number,
+  isClosed: boolean,
+) {
+  return prisma.workingHours.upsert({
+    where: {
+      dealershipId_dayOfWeek: { dealershipId, dayOfWeek },
+    },
+    create: {
+      id: uuidv4(),
+      dealershipId,
+      dayOfWeek,
+      openMinutes,
+      closeMinutes,
+      isClosed,
+    },
+    update: { openMinutes, closeMinutes, isClosed },
+  });
+}
+
+async function upsertHoliday(
+  dealershipId: string,
+  date: Date,
+  name: string,
+  isRecurring: boolean,
+) {
+  return prisma.holiday.upsert({
+    where: {
+      dealershipId_date_isRecurring: { dealershipId, date, isRecurring },
+    },
+    create: { id: uuidv4(), dealershipId, date, name, isRecurring },
+    update: { name },
+  });
+}
 
 async function main() {
-  await prisma.dealership.upsert({
-    where: { id: DEALERSHIP_ID },
+  const dealership = await prisma.dealership.upsert({
+    where: { code: 'DEMO-01' },
     create: {
-      id: DEALERSHIP_ID,
+      id: uuidv4(),
       code: 'DEMO-01',
       name: 'Demo Dealership',
     },
     update: { name: 'Demo Dealership' },
   });
 
-  await prisma.serviceType.upsert({
-    where: { id: SVC_OIL_ID },
+  const svcOil = await prisma.serviceType.upsert({
+    where: { code: 'OIL_CHANGE' },
     create: {
-      id: SVC_OIL_ID,
+      id: uuidv4(),
       code: 'OIL_CHANGE',
       name: 'Oil change',
       durationMinutes: 30,
       requiredSkillTag: 'lube',
     },
-    update: { name: 'Oil change', durationMinutes: 30, requiredSkillTag: 'lube' },
+    update: {
+      name: 'Oil change',
+      durationMinutes: 30,
+      requiredSkillTag: 'lube',
+    },
   });
 
-  await prisma.serviceType.upsert({
-    where: { id: SVC_BRAKE_ID },
+  const svcBrake = await prisma.serviceType.upsert({
+    where: { code: 'BRAKE_SERVICE' },
     create: {
-      id: SVC_BRAKE_ID,
+      id: uuidv4(),
       code: 'BRAKE_SERVICE',
       name: 'Brake service',
       durationMinutes: 60,
       requiredSkillTag: 'brake',
     },
-    update: { name: 'Brake service', durationMinutes: 60, requiredSkillTag: 'brake' },
+    update: {
+      name: 'Brake service',
+      durationMinutes: 60,
+      requiredSkillTag: 'brake',
+    },
   });
 
-  await prisma.serviceBay.upsert({
-    where: { id: BAY_A_ID },
-    create: { id: BAY_A_ID, dealershipId: DEALERSHIP_ID, label: 'Bay A' },
-    update: { label: 'Bay A' },
-  });
+  await upsertServiceBay(dealership.id, 'Bay A');
+  await upsertServiceBay(dealership.id, 'Bay B');
 
-  await prisma.serviceBay.upsert({
-    where: { id: BAY_B_ID },
-    create: { id: BAY_B_ID, dealershipId: DEALERSHIP_ID, label: 'Bay B' },
-    update: { label: 'Bay B' },
-  });
+  // Mon–Fri 08:00–18:00; Sat & Sun closed.
+  for (const dow of [1, 2, 3, 4, 5]) {
+    await upsertWorkingHours(dealership.id, dow, OPEN_8_AM, CLOSE_6_PM, false);
+  }
+  for (const dow of [0, 6]) {
+    await upsertWorkingHours(dealership.id, dow, 0, 0, true);
+  }
 
-  await prisma.technician.upsert({
-    where: { id: TECH_ALICE_ID },
-    create: { id: TECH_ALICE_ID, dealershipId: DEALERSHIP_ID, name: 'Alice Tech' },
-    update: { name: 'Alice Tech' },
-  });
+  // A few annually recurring Vietnamese public holidays. Year is a
+  // placeholder when isRecurring=true — only month/day match.
+  await upsertHoliday(
+    dealership.id,
+    new Date(Date.UTC(2000, 0, 1)),
+    "New Year's Day",
+    true,
+  );
+  await upsertHoliday(
+    dealership.id,
+    new Date(Date.UTC(2000, 3, 30)),
+    'Reunification Day',
+    true,
+  );
+  await upsertHoliday(
+    dealership.id,
+    new Date(Date.UTC(2000, 4, 1)),
+    'Labour Day',
+    true,
+  );
+  await upsertHoliday(
+    dealership.id,
+    new Date(Date.UTC(2000, 8, 2)),
+    'National Day',
+    true,
+  );
 
-  await prisma.technician.upsert({
-    where: { id: TECH_BOB_ID },
-    create: { id: TECH_BOB_ID, dealershipId: DEALERSHIP_ID, name: 'Bob Tech' },
-    update: { name: 'Bob Tech' },
+  const alice = await upsertTechnician(dealership.id, 'Alice Tech');
+  const bob = await upsertTechnician(dealership.id, 'Bob Tech');
+
+  await prisma.technicianQualifiedService.upsert({
+    where: {
+      technicianId_serviceTypeId: {
+        technicianId: alice.id,
+        serviceTypeId: svcOil.id,
+      },
+    },
+    create: { technicianId: alice.id, serviceTypeId: svcOil.id },
+    update: {},
   });
 
   await prisma.technicianQualifiedService.upsert({
     where: {
       technicianId_serviceTypeId: {
-        technicianId: TECH_ALICE_ID,
-        serviceTypeId: SVC_OIL_ID,
+        technicianId: alice.id,
+        serviceTypeId: svcBrake.id,
       },
     },
-    create: { technicianId: TECH_ALICE_ID, serviceTypeId: SVC_OIL_ID },
-    update: { technicianId: TECH_ALICE_ID, serviceTypeId: SVC_OIL_ID },
+    create: { technicianId: alice.id, serviceTypeId: svcBrake.id },
+    update: {},
   });
 
   await prisma.technicianQualifiedService.upsert({
     where: {
       technicianId_serviceTypeId: {
-        technicianId: TECH_ALICE_ID,
-        serviceTypeId: SVC_BRAKE_ID,
+        technicianId: bob.id,
+        serviceTypeId: svcOil.id,
       },
     },
-    create: { technicianId: TECH_ALICE_ID, serviceTypeId: SVC_BRAKE_ID },
-    update: { technicianId: TECH_ALICE_ID, serviceTypeId: SVC_BRAKE_ID },
-  });
-
-  await prisma.technicianQualifiedService.upsert({
-    where: {
-      technicianId_serviceTypeId: {
-        technicianId: TECH_BOB_ID,
-        serviceTypeId: SVC_OIL_ID,
-      },
-    },
-    create: { technicianId: TECH_BOB_ID, serviceTypeId: SVC_OIL_ID },
-    update: { technicianId: TECH_BOB_ID, serviceTypeId: SVC_OIL_ID },
+    create: { technicianId: bob.id, serviceTypeId: svcOil.id },
+    update: {},
   });
 
   const aliceOk = {
     OIL_CHANGE: true,
     BRAKE_SERVICE: true,
-    notes: 'Dynamic OK map; junction table remains source for hard qualifications.',
+    notes:
+      'Dynamic OK map; junction table remains source for hard qualifications.',
   };
 
   const bobOk = {
@@ -136,13 +226,13 @@ async function main() {
     where: {
       scope_scopeId_configKey: {
         scope: TechnicalConfigScope.TECHNICIAN,
-        scopeId: TECH_ALICE_ID,
+        scopeId: alice.id,
         configKey: 'specialization.ok',
       },
     },
     create: {
       scope: TechnicalConfigScope.TECHNICIAN,
-      scopeId: TECH_ALICE_ID,
+      scopeId: alice.id,
       configKey: 'specialization.ok',
       value: aliceOk,
     },
@@ -153,13 +243,13 @@ async function main() {
     where: {
       scope_scopeId_configKey: {
         scope: TechnicalConfigScope.TECHNICIAN,
-        scopeId: TECH_BOB_ID,
+        scopeId: bob.id,
         configKey: 'specialization.ok',
       },
     },
     create: {
       scope: TechnicalConfigScope.TECHNICIAN,
-      scopeId: TECH_BOB_ID,
+      scopeId: bob.id,
       configKey: 'specialization.ok',
       value: bobOk,
     },

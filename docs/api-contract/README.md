@@ -12,6 +12,10 @@ Human-readable contracts for the [`booking-service`](../booking-service/) HTTP s
 | [technicians.md](./technicians.md) | `/technicians` |
 | [vehicles.md](./vehicles.md) | `/vehicles` |
 | [appointments.md](./appointments.md) | `/appointments` |
+| [bookings.md](./bookings.md) | `/bookings` (confirm-booking use-case) |
+| [working-hours.md](./working-hours.md) | `/working-hours` (weekly schedule per dealership) |
+| [holidays.md](./holidays.md) | `/holidays` (per-dealership holidays) |
+| [availability.md](./availability.md) | `/dealerships/:id/availability` (read-only schedule projection) |
 | [errors.md](./errors.md) | Domain + generic HTTP errors (shared) |
 
 ## Base URL and format

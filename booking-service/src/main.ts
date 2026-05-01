@@ -1,5 +1,7 @@
+import 'dotenv/config';
+
 // OTel SDK must initialise before any module being instrumented loads.
-// Keep this as the very first import — NestJS, Express, ioredis, pg etc.
+// Keep tracing immediately after env load — NestJS, Express, ioredis, pg etc.
 // pull in HTTP/redis/pg modules eagerly via require(), and the
 // auto-instrumentations only patch them if they are loaded after the SDK starts.
 import './infrastructure/observability/tracing';

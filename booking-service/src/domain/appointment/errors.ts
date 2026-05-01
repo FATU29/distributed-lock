@@ -11,3 +11,10 @@ export class InvalidSlotWindowError extends Error {
     this.name = 'InvalidSlotWindowError';
   }
 }
+
+export class SlotAlreadyBookedError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'SlotAlreadyBookedError';
+  }
+}

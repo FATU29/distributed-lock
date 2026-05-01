@@ -12,11 +12,11 @@
     "experimentalDecorators": true,
     "allowSyntheticDefaultImports": true,
     "target": "ES2023",
+    "types": ["jest", "node"],
     "sourceMap": true,
     "outDir": "./dist",
-    "paths": {
-      "@/*": ["./src/*"]
-    },
+    "baseUrl": "./",
+    "composite": true,
     "incremental": true,
     "skipLibCheck": true,
     "strictNullChecks": true,
