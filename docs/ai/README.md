@@ -12,6 +12,7 @@ This folder documents what **Copilot, Cursor, Claude, Codex**, and other agents 
 | Service rules (canonical) | [`booking-service/CLAUDE.md`](../booking-service/CLAUDE.md), [`booking-service/AGENTS.md`](../booking-service/AGENTS.md) |
 | Cursor rules | [`.cursor/rules/architecture.mdc`](../../.cursor/rules/architecture.mdc), [`booking-service/.cursor/rules/`](../../booking-service/.cursor/rules/) |
 | GitHub Copilot | [`.github/copilot-instructions.md`](../../.github/copilot-instructions.md), [`.github/instructions/`](../../.github/instructions/) |
+| GenAI in the **design** phase (docs, architecture narrative, guardrails) | [`docs/genai-design/design-phase-genai.md`](../genai-design/design-phase-genai.md) |
 
 ---
 
