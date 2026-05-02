@@ -4,11 +4,48 @@ Monorepo for a **NestJS appointment scheduler** (`booking-service/`): scheduling
 
 **Authoritative guides for contributors and AI tools:** [CLAUDE.md](CLAUDE.md), [AGENTS.md](AGENTS.md), [booking-service/CLAUDE.md](booking-service/CLAUDE.md).
 
-**Local dev (Docker):**
+## Run locally
+
+### Option A — whole stack in Docker (recommended)
+
+Starts Postgres, Redis (cache + five Redlock nodes), observability, and **`booking-service`** with `nest start --watch`. Your repo’s `booking-service/` tree is bind-mounted into the container, so edits under **`booking-service/src/`** trigger a recompile.
 
 ```bash
 docker compose -f docker-compose.dev.yml up --build
 ```
+
+The HTTP API listens on **port 8080** by default (`http://localhost:8080`).
+
+### Option B — Nest on your machine, dependencies in Docker
+
+Use this when you want **`npm run start:dev`** running **on the host** against real Postgres/Redis from Compose.
+
+1. **Start only backing services** (no `booking-service` container):
+
+   ```bash
+   docker compose -f docker-compose.dev.yml up -d postgres redis-cache redlock-1 redlock-2 redlock-3 redlock-4 redlock-5
+   ```
+
+2. **Configure env** — from `booking-service/`, copy the example and adjust if your ports differ:
+
+   ```bash
+   cd booking-service
+   cp .env.example .env
+   ```
+
+   Defaults in `.env.example` match the compose ports above (`localhost:5432`, cache `6379`, Redlock `6381`–`6385`).
+
+3. **Install, migrate, run** (use an active Node.js LTS):
+
+   ```bash
+   npm install
+   npx prisma migrate deploy
+   npm run start:dev
+   ```
+
+   This runs **`nest start --watch`** over **`src/`** (see `booking-service/package.json`). The app listens on **`PORT`** or **8080**.
+
+4. **Other scripts** (from `booking-service/`): `npm run build` → `nest build`; `npm test` / `npm run test:integration` / `npm run test:e2e` as in `booking-service/CLAUDE.md`.
 
 ---
 
