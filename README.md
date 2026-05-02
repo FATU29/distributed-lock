@@ -19,9 +19,9 @@ docker compose -f docker-compose.dev.yml up --build
 | Doc | Description |
 | --- | --- |
 | [Scenario — requirements & architecture](docs/scenario/content.md) | Load-bearing product and system rationale |
-| [Why each architecture phase exists](docs/diagram/WHY-ENHANCE-PHASE.md) | Narrative behind the phased design |
-| [Architecture diagram (final)](docs/diagram/architecture-final.mmd) | Mermaid view of the target system |
-| [Architecture diagram (phases)](docs/diagram/architecture-phase.mmd) | Phased evolution view |
+| [Why each architecture phase exists](docs/architecture-diagram/WHY-ENHANCE-PHASE.md) | Narrative behind the phased design |
+| [Architecture diagram (final)](docs/architecture-diagram/architecture-final.mmd) | Mermaid view of the target system |
+| [Architecture diagram (phases)](docs/architecture-diagram/architecture-phase.mmd) | Phased evolution view |
 
 ### Topic hubs
 

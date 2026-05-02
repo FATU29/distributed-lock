@@ -9,7 +9,7 @@ Repo-level rules: [../AGENTS.md](../AGENTS.md) / [../CLAUDE.md](../CLAUDE.md).
 1. [CLAUDE.md](CLAUDE.md) — full service guide (requirements, layout, Prisma, Redlock, repositories, observability, testing).
 2. [../docs/ai/README.md](../docs/ai/README.md) — **AI assistants**: CRUD vertical slice + **mandatory** `test/fakes/` + `*.service.spec.ts` pairing.
 3. [../docs/scenario/content.md](../docs/scenario/content.md) — requirements + architecture rationale. Load-bearing.
-4. [../docs/diagram/WHY-ENHANCE-PHASE.md](../docs/diagram/WHY-ENHANCE-PHASE.md) — why the architecture is shaped this way.
+4. [../docs/architecture-diagram/WHY-ENHANCE-PHASE.md](../docs/architecture-diagram/WHY-ENHANCE-PHASE.md) — why the architecture is shaped this way.
 5. [../docs/observability/strategy.md](../docs/observability/strategy.md) — pillar-by-pillar tool choice + the why.
 
 ## What this service is

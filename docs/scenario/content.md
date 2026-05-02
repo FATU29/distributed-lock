@@ -13,7 +13,7 @@
 
 ## Architecture Best Practices — Scaling & Performance
 
-The booking flow is read-heavy on availability checks and write-contended on the confirm step (multiple users may target the same bay/technician/slot). The design below addresses both. See [`../diagram/architecture.md`](../diagram/architecture.md) and [`../diagram/architecture.mmd`](../diagram/architecture.mmd) for the phased rationale.
+The booking flow is read-heavy on availability checks and write-contended on the confirm step (multiple users may target the same bay/technician/slot). The design below addresses both. See [`../architecture-diagram/architecture-phase.mmd`](../architecture-diagram/architecture-phase.mmd) and [`../architecture-diagram/WHY-ENHANCE-PHASE.md`](../architecture-diagram/WHY-ENHANCE-PHASE.md) for the phased rationale.
 
 ### 1. Storage split: PostgreSQL is the system of record, Redis is the hot path
 

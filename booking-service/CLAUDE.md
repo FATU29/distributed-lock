@@ -4,8 +4,8 @@ This is the **scheduler service** from the architecture diagram, and the only se
 
 Source-of-truth docs (read before non-trivial changes):
 - [../docs/scenario/content.md](../docs/scenario/content.md) — requirements and architecture rationale
-- [../docs/diagram/architecture-final.mmd](../docs/diagram/architecture-final.mmd) — final architecture diagram
-- [../docs/diagram/WHY-ENHANCE-PHASE.md](../docs/diagram/WHY-ENHANCE-PHASE.md) — why each phase exists
+- [../docs/architecture-diagram/architecture-final.mmd](../docs/architecture-diagram/architecture-final.mmd) — final architecture diagram
+- [../docs/architecture-diagram/WHY-ENHANCE-PHASE.md](../docs/architecture-diagram/WHY-ENHANCE-PHASE.md) — why each phase exists
 - [../docs/observability/strategy.md](../docs/observability/strategy.md) — observability pillars (logging / metrics / tracing) and why each tool was chosen over the alternatives
 - [../docs/ai/README.md](../docs/ai/README.md) — **AI assistants**: CRUD vertical slice + mandatory `test/fakes/` + `*.service.spec.ts` pairing
 

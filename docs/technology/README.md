@@ -1,6 +1,6 @@
 # Technology — choices and rationale
 
-Stack decisions for the scheduler service: what we use and why it fits the architecture in [../scenario/content.md](../scenario/content.md) and [../diagram/architecture-final.mmd](../diagram/architecture-final.mmd).
+Stack decisions for the scheduler service: what we use and why it fits the architecture in [../scenario/content.md](../scenario/content.md) and [../architecture-diagram/architecture-final.mmd](../architecture-diagram/architecture-final.mmd).
 
 | Topic | File |
 | --- | --- |

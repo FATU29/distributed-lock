@@ -15,7 +15,7 @@ It complements [../ai/README.md](../ai/README.md), which focuses on **implementa
 | **Consistency passes**: aligning new prose with `CLAUDE.md`, `AGENTS.md`, and `.cursor/rules` non-negotiables. | Choosing real cloud regions, SKUs, or spend approval. |
 | **Scaffolding** mermaid diagrams, sequence charts, and doc indexes from an existing spec. | Signing off p99 SLOs for production without measurement. |
 
-The **load-bearing requirements** remain in [../scenario/content.md](../scenario/content.md) and [../diagram/architecture-final.mmd](../diagram/architecture-final.mmd). GenAI was used to **expand, connect, and restate** those sources — not to replace them.
+The **load-bearing requirements** remain in [../scenario/content.md](../scenario/content.md) and [../architecture-diagram/architecture-final.mmd](../architecture-diagram/architecture-final.mmd). GenAI was used to **expand, connect, and restate** those sources — not to replace them.
 
 ---
 
@@ -67,7 +67,7 @@ The **load-bearing requirements** remain in [../scenario/content.md](../scenario
 | If you need… | See |
 | --- | --- |
 | Requirements and architectural rationale | [../scenario/content.md](../scenario/content.md) |
-| Final topology diagram | [../diagram/architecture-final.mmd](../diagram/architecture-final.mmd) |
+| Final topology diagram | [../architecture-diagram/architecture-final.mmd](../architecture-diagram/architecture-final.mmd) |
 | Data path through confirm and outbox | [../data-flow/data-flow.md](../data-flow/data-flow.md) |
 | Stack list with short why | [../technology/technology-choices.md](../technology/technology-choices.md) |
 | CRUD / test obligations for AI coding agents | [../ai/README.md](../ai/README.md) |

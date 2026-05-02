@@ -34,7 +34,7 @@ Justifications are aligned with the scenario: **N stateless instances**, **Postg
 
 | Choice | Justification |
 | --- | --- |
-| **Redis** (via **ioredis**) | **Sub-ms reads** and high QPS for cache-aside availability projections; **separate** Redis cluster role for locks so cache eviction or cache Redis failover does not erase lock semantics. See [../scenario/content.md](../scenario/content.md) §1–2 and [../diagram/architecture-final.mmd](../diagram/architecture-final.mmd). |
+| **Redis** (via **ioredis**) | **Sub-ms reads** and high QPS for cache-aside availability projections; **separate** Redis cluster role for locks so cache eviction or cache Redis failover does not erase lock semantics. See [../scenario/content.md](../scenario/content.md) §1–2 and [../architecture-diagram/architecture-final.mmd](../architecture-diagram/architecture-final.mmd). |
 | **`redlock` (npm)** | Implements the **Redlock algorithm** (quorum across independent masters, token-checked release). Avoids hand-rolled acquire/release timing bugs that silently break mutual exclusion. |
 
 ---

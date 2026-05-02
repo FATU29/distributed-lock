@@ -1,6 +1,6 @@
 # Component — topic-specific notes
 
-Short, focused write-ups that complement the main docs (`scenario/`, `diagram/`, `api-contract/`, `database/`, `observability/`, `ai/`). For **request/response and booking pipeline** flow, see [../data-flow/data-flow.md](../data-flow/data-flow.md). For **stack and tooling rationale**, see [../technology/technology-choices.md](../technology/technology-choices.md).
+Short, focused write-ups that complement the main docs (`scenario/`, `architecture-diagram/`, `api-contract/`, `database/`, `observability/`, `ai/`). For **request/response and booking pipeline** flow, see [../data-flow/data-flow.md](../data-flow/data-flow.md). For **stack and tooling rationale**, see [../technology/technology-choices.md](../technology/technology-choices.md).
 
 | Topic | File |
 | --- | --- |

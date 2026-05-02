@@ -1,6 +1,6 @@
 # Data flow — booking-service
 
-How information moves from the client through NestJS layers to Postgres, Redis (locks), payment, and the outbox. For the big-picture diagram, see [../diagram/architecture-final.mmd](../diagram/architecture-final.mmd).
+How information moves from the client through NestJS layers to Postgres, Redis (locks), payment, and the outbox. For the big-picture diagram, see [../architecture-diagram/architecture-final.mmd](../architecture-diagram/architecture-final.mmd).
 
 ## 1. Typical HTTP vertical slice
 
@@ -89,7 +89,7 @@ sequenceDiagram
 
 ## 3. Read-heavy availability (cache-aside) — architectural path
 
-The scenario and [architecture-final.mmd](../diagram/architecture-final.mmd) describe a **cache-aside** path for availability reads:
+The scenario and [architecture-final.mmd](../architecture-diagram/architecture-final.mmd) describe a **cache-aside** path for availability reads:
 
 1. `GET` projected keys from **cache Redis** (`avail:bay:…`, `avail:tech:…`).
 2. On miss, **SELECT** from Postgres, compute availability, `SET` with TTL.

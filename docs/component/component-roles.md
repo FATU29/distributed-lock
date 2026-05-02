@@ -38,7 +38,7 @@ One-line roles for the main pieces of the scheduler. Dependency direction: **int
 | Folder | Role |
 | --- | --- |
 | **`scenario/`** | Product requirements and architecture rationale for the scheduler. |
-| **`diagram/`** | Architecture diagrams and phased “why” narratives. |
+| **`architecture-diagram/`** | Architecture diagrams and phased “why” narratives. |
 | **`api-contract/`** | HTTP shapes, status codes, and error contracts per resource. |
 | **`database/`** | Table-level reference and modeling notes. |
 | **`observability/`** | Logging/metrics/tracing strategy and tooling choices. |

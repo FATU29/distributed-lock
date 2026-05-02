@@ -12,8 +12,8 @@ The root **CLAUDE.md**, **AGENTS.md**, and **booking-service/AGENTS.md** are kep
 2. [docs/ai/README.md](docs/ai/README.md) — AI-focused checklist: CRUD slice files, fakes + `*.service.spec.ts`, `AppointmentRepository` seeding note.
 3. [booking-service/AGENTS.md](booking-service/AGENTS.md) → [booking-service/CLAUDE.md](booking-service/CLAUDE.md) — service-level rules: requirements, the booking flow, Redlock, Prisma, repositories, testing strategy.
 3. [docs/scenario/content.md](docs/scenario/content.md) — the requirements and architectural rationale. Load-bearing.
-4. [docs/diagram/architecture-final.mmd](docs/diagram/architecture-final.mmd) — final architecture diagram.
-5. [docs/diagram/WHY-ENHANCE-PHASE.md](docs/diagram/WHY-ENHANCE-PHASE.md) — why each architectural phase exists.
+4. [docs/architecture-diagram/architecture-final.mmd](docs/architecture-diagram/architecture-final.mmd) — final architecture diagram.
+5. [docs/architecture-diagram/WHY-ENHANCE-PHASE.md](docs/architecture-diagram/WHY-ENHANCE-PHASE.md) — why each architectural phase exists.
 
 ## The rules you cannot violate
 

@@ -7,12 +7,12 @@ alwaysApply: true
 
 Canonical guide: [`CLAUDE.md`](../../CLAUDE.md). Mirror: [`AGENTS.md`](../../AGENTS.md). AI checklist (CRUD fakes + unit tests): [`../../docs/ai/README.md`](../../docs/ai/README.md). On drift, CLAUDE.md wins.
 
-This is the **scheduler service** from [`../../docs/diagram/architecture-final.mmd`](../../docs/diagram/architecture-final.mmd). Single service in the repo. Aggregates owned by this service (User, Customer, Vehicle, Appointment, ...) live behind ports in `src/domain/ports/` and are persisted via Prisma repositories in `src/infrastructure/persistence/`.
+This is the **scheduler service** from [`../../docs/architecture-diagram/architecture-final.mmd`](../../docs/architecture-diagram/architecture-final.mmd). Single service in the repo. Aggregates owned by this service (User, Customer, Vehicle, Appointment, ...) live behind ports in `src/domain/ports/` and are persisted via Prisma repositories in `src/infrastructure/persistence/`.
 
 ## Read first when changing booking-flow code
 
 - [`../../docs/scenario/content.md`](../../docs/scenario/content.md) — requirements + architecture rationale. Load-bearing.
-- [`../../docs/diagram/WHY-ENHANCE-PHASE.md`](../../docs/diagram/WHY-ENHANCE-PHASE.md) — why the architecture is shaped this way.
+- [`../../docs/architecture-diagram/WHY-ENHANCE-PHASE.md`](../../docs/architecture-diagram/WHY-ENHANCE-PHASE.md) — why the architecture is shaped this way.
 
 ## Source layout
 

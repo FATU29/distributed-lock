@@ -1,6 +1,6 @@
 # Data flow — topic-specific notes
 
-Focused pages that sit beside the main references (`scenario/`, `diagram/`, `api-contract/`, `database/`, `observability/`, `ai/`).
+Focused pages that sit beside the main references (`scenario/`, `architecture-diagram/`, `api-contract/`, `database/`, `observability/`, `ai/`).
 
 | Topic | File |
 | --- | --- |
