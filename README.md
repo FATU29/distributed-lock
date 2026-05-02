@@ -106,9 +106,14 @@ These are **Node scripts** you run from the **repository root** (not `npm test`)
 | --- | --- |
 | [`scripts/concurrent-booking-race.mjs`](scripts/concurrent-booking-race.mjs) | Many clients race for the **same** slot; expects **one** `201` and the rest `409` / `503`. |
 
-#### `concurrent-booking-race.mjs` — HTTP calls (in order)
+#### `concurrent-booking-race.mjs` — run flow (summary)
 
-The script resolves fixtures once, then prepares one user + vehicle per concurrent client, then fires all bookings at once.
+1. **Resolve fixtures once** — dealership (prefer `DEMO-01`), first bay, first technician, service type (prefer `OIL_CHANGE`).
+2. **Pick a slot** — see env table below; by default a **random** future **Mon–Fri** **10:00–11:00 UTC** window inside the next **`SLOT_WINDOW_DAYS`** calendar days (avoids reusing the same slot after a previous run filled it).
+3. **Create `CLIENTS` user + vehicle pairs** — sequential; one email / VIN / `customerId` per client.
+4. **`POST /bookings` in parallel** — same bay, technician, service type, **same** `slotStart` / `slotEnd`; different `customerId`, `vehicleVin`, `idempotencyKey` per client.
+
+#### HTTP calls (in order)
 
 | Step | Method | Path / query | Why |
 | --- | --- | --- | --- |
@@ -120,19 +125,29 @@ The script resolves fixtures once, then prepares one user + vehicle per concurre
 | 5b | `POST` | `/vehicles` | **× `CLIENTS`** — one VIN per client, tied to that customer |
 | 6 | `POST` | `/bookings` | **× `CLIENTS` in parallel** — same `dealershipId`, `bayId`, `technicianId`, `serviceTypeId`, `slotStart`/`slotEnd`; different `customerId`, `vehicleVin`, `idempotencyKey` per client |
 
-Slot window: next **Mon–Fri** **10:00–11:00 UTC** after “now”, unless you set **`SLOT_START`** and **`SLOT_END`** (same UTC calendar day; `slotEnd` must be after `slotStart`).
+#### Slot selection (env)
+
+| Env | Behaviour |
+| --- | --- |
+| *(default)* | **Random** pick among future **Mon–Fri 10:00–11:00 UTC** slots in the next **`SLOT_WINDOW_DAYS`** calendar days (default **90**, max **120**). |
+| `SLOT_RANDOM=0` | **Deterministic:** earliest future Mon–Fri slot after “now” (legacy script behaviour). |
+| `SLOT_START` + `SLOT_END` | **Override** fully (ISO8601, same UTC calendar day, `slotEnd` &gt; `slotStart`). |
 
 **Success criteria:** exactly **one** response with **201**; others **409** (`SLOT_ALREADY_BOOKED`) and/or **503** (`LOCK_NOT_ACQUIRED`). More than one **201** indicates a concurrency bug.
+
+If you see **0 × 201** (all 409): the slot may already be booked, hit a seeded holiday, or be outside working hours — re-run (random picks another day), widen `SLOT_WINDOW_DAYS`, set `SLOT_START` / `SLOT_END`, or clear appointments in the DB.
 
 ```bash
 # From repo root; API at BASE_URL (default http://localhost:8080), DB migrated + seeded
 node scripts/concurrent-booking-race.mjs
 BASE_URL=http://127.0.0.1:8080 CLIENTS=20 node scripts/concurrent-booking-race.mjs
-DEBUG_RACE_JSON=1 node scripts/concurrent-booking-race.mjs   # full JSON (status + bodies) on stdout
-NO_COLOR=1 node scripts/concurrent-booking-race.mjs          # no ANSI colors
+SLOT_WINDOW_DAYS=30 node scripts/concurrent-booking-race.mjs   # random within next 30 calendar days
+SLOT_RANDOM=0 node scripts/concurrent-booking-race.mjs          # always next future weekday slot
+DEBUG_RACE_JSON=1 node scripts/concurrent-booking-race.mjs      # full JSON (status + bodies) on stdout
+NO_COLOR=1 node scripts/concurrent-booking-race.mjs             # no ANSI colors
 ```
 
-Other env vars: `SLOT_START`, `SLOT_END` (ISO8601). Full list: comment block at the top of [`scripts/concurrent-booking-race.mjs`](scripts/concurrent-booking-race.mjs).
+Full env list: header comment in [`scripts/concurrent-booking-race.mjs`](scripts/concurrent-booking-race.mjs).
 
 Further testing policy and coverage expectations: [`booking-service/CLAUDE.md`](booking-service/CLAUDE.md) and [`docs/ai/README.md`](docs/ai/README.md) (CRUD fake + service spec checklist).
 

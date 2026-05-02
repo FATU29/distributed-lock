@@ -12,7 +12,7 @@ Inside the service container: run migrations and seed when you need fixture data
 
 **Example base URL:** `http://localhost:8080` — no global API prefix (paths are `/users`, `/bookings`, …).
 
-**Concurrent booking stress test:** [`scripts/concurrent-booking-race.mjs`](../scripts/concurrent-booking-race.mjs) (parallel `POST /bookings`).
+**Concurrent booking stress test:** [`scripts/concurrent-booking-race.mjs`](../scripts/concurrent-booking-race.mjs) — flow: fixtures → slot (default **random** Mon–Fri 10–11 UTC in `SLOT_WINDOW_DAYS`) → `CLIENTS` × user/vehicle → parallel `POST /bookings`. Usage and env: see **Testing → `scripts/` — manual API runners** in the [root README](../README.md).
 
 ---
 

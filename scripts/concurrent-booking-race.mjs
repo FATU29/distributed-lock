@@ -13,8 +13,11 @@
  * Optional env:
  *   BASE_URL           default http://localhost:8080
  *   CLIENTS            concurrent booking attempts (default 10)
- *   SLOT_START         ISO8601 — overrides automatic next weekday 10:00 UTC slot
+ *   SLOT_START         ISO8601 — overrides automatic weekday 10:00 UTC slot picker
  *   SLOT_END           ISO8601 — must be same UTC day as SLOT_START, > SLOT_START
+ *   SLOT_RANDOM        default on: pick a random future Mon–Fri 10:00–11:00 UTC in
+ *                      SLOT_WINDOW_DAYS. Set to 0 for deterministic “next” slot (old behavior).
+ *   SLOT_WINDOW_DAYS   how many calendar days ahead to draw random slots (default 90, max 120)
  *   NO_COLOR           set to any value to disable ANSI colors
  *   DEBUG_RACE_JSON=1  print full JSON summary (status + bodies) to stdout
  */
@@ -136,13 +139,7 @@ async function postJson(path, payload) {
   return { status: res.status, body };
 }
 
-function nextWeekdaySlotUtc() {
-  if (process.env.SLOT_START && process.env.SLOT_END) {
-    return {
-      slotStart: process.env.SLOT_START,
-      slotEnd: process.env.SLOT_END,
-    };
-  }
+function firstFutureWeekdaySlotUtc() {
   const start = new Date();
   start.setUTCSeconds(0, 0);
   start.setUTCHours(10, 0, 0, 0);
@@ -162,6 +159,55 @@ function nextWeekdaySlotUtc() {
   throw new Error(
     'Could not find a future Mon–Fri slot; set SLOT_START / SLOT_END explicitly.',
   );
+}
+
+function collectFutureWeekdaySlotsUtc(maxCalendarDays) {
+  const now = Date.now();
+  const candidates = [];
+  const base = new Date();
+  base.setUTCSeconds(0, 0);
+  for (let d = 0; d < maxCalendarDays; d++) {
+    const day = new Date(base);
+    day.setUTCDate(base.getUTCDate() + d);
+    day.setUTCHours(10, 0, 0, 0);
+    const dow = day.getUTCDay();
+    if (dow < 1 || dow > 5) {
+      continue;
+    }
+    if (day.getTime() <= now) {
+      continue;
+    }
+    const end = new Date(day);
+    end.setUTCHours(11, 0, 0, 0);
+    candidates.push({
+      slotStart: day.toISOString(),
+      slotEnd: end.toISOString(),
+    });
+  }
+  return candidates;
+}
+
+function nextWeekdaySlotUtc() {
+  if (process.env.SLOT_START && process.env.SLOT_END) {
+    return {
+      slotStart: process.env.SLOT_START,
+      slotEnd: process.env.SLOT_END,
+    };
+  }
+  if (process.env.SLOT_RANDOM === '0') {
+    return firstFutureWeekdaySlotUtc();
+  }
+  const windowDays = Math.max(
+    7,
+    Math.min(120, Number(process.env.SLOT_WINDOW_DAYS ?? '90') || 90),
+  );
+  const candidates = collectFutureWeekdaySlotsUtc(windowDays);
+  if (candidates.length === 0) {
+    throw new Error(
+      `No future Mon–Fri 10:00–11:00 UTC slots in the next ${windowDays} days; set SLOT_START / SLOT_END.`,
+    );
+  }
+  return candidates[Math.floor(Math.random() * candidates.length)];
 }
 
 async function resolveFixtures() {
@@ -244,8 +290,19 @@ async function main() {
 
   const fixtures = await resolveFixtures();
   const slot = nextWeekdaySlotUtc();
+  const slotWindowDays = Math.max(
+    7,
+    Math.min(120, Number(process.env.SLOT_WINDOW_DAYS ?? '90') || 90),
+  );
+  const slotSource =
+    process.env.SLOT_START && process.env.SLOT_END
+      ? 'SLOT_START / SLOT_END'
+      : process.env.SLOT_RANDOM === '0'
+        ? 'next weekday (SLOT_RANDOM=0)'
+        : `random Mon–Fri 10–11 UTC, ${slotWindowDays}d window`;
   console.error(`  ${ansi.cyan}Slot start${ansi.reset}     ${slot.slotStart}`);
   console.error(`  ${ansi.cyan}Slot end${ansi.reset}       ${slot.slotEnd}`);
+  console.error(`  ${ansi.cyan}Slot source${ansi.reset}    ${slotSource}`);
   console.error(LINE);
 
   console.error(`  ${ansi.dim}Creating ${CLIENTS} users and vehicles…${ansi.reset}`);
@@ -343,10 +400,10 @@ async function main() {
   } else if (wins === 0) {
     console.error('');
     console.error(
-      `  ${ansi.yellow}No HTTP 201 — the slot may already be held.${ansi.reset} Try explicit`,
+      `  ${ansi.yellow}No HTTP 201 — the slot may already be held, a holiday, or invalid.${ansi.reset} Try`,
     );
     console.error(
-      `  ${ansi.dim}SLOT_START${ansi.reset} / ${ansi.dim}SLOT_END${ansi.reset}, or clear appointments in the DB, then run again.`,
+      `  ${ansi.dim}SLOT_START${ansi.reset} / ${ansi.dim}SLOT_END${ansi.reset}, re-run (random picks another day), widen ${ansi.dim}SLOT_WINDOW_DAYS${ansi.reset}, or clear appointments.`,
     );
   } else {
     console.error('');
