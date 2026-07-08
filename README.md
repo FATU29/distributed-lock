@@ -1,4 +1,4 @@
-# Keyloop service scheduler
+# Booking service
 
 Monorepo for a **NestJS appointment scheduler** (`booking-service/`): scheduling reference data, availability, confirm-booking (Postgres, Redis cache-aside, Redlock, transactional outbox), and HTTP APIs documented under `docs/`.
 
